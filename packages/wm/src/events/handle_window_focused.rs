@@ -100,8 +100,13 @@ pub fn handle_window_focused(
         new_offset = (current_offset + delta).max(0);
       }
 
-      if (f64::from(new_offset) - workspace.offset_x()).abs() > 0.001 {
-        workspace.set_offset_x(f64::from(new_offset));
+      let target_offset = f64::from(new_offset);
+      if (target_offset - workspace.offset_x()).abs() > 0.001 {
+        crate::commands::general::animate_pan_workspace(
+          &workspace,
+          target_offset,
+          config,
+        );
         state
           .pending_sync
           .queue_container_to_redraw(workspace.clone());

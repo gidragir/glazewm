@@ -69,6 +69,7 @@ impl Default for GapsConfig {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all(serialize = "camelCase"))]
+#[allow(clippy::struct_excessive_bools)]
 pub struct GeneralConfig {
   /// Config for automatically moving the cursor.
   pub cursor_jump: CursorJumpConfig,
@@ -99,6 +100,12 @@ pub struct GeneralConfig {
 
   /// Width presets for cycling column widths in infinite canvas mode.
   pub column_width_presets: Vec<LengthValue>,
+
+  /// Whether to enable smooth transitions during canvas navigation.
+  pub animation_enabled: bool,
+
+  /// Duration in milliseconds for canvas panning transitions.
+  pub animation_duration_ms: u32,
 }
 
 impl Default for GeneralConfig {
@@ -147,6 +154,8 @@ impl Default for GeneralConfig {
           unit: LengthUnit::Percentage,
         },
       ],
+      animation_enabled: true,
+      animation_duration_ms: 90,
     }
   }
 }

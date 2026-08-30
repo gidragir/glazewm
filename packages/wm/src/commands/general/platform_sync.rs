@@ -12,7 +12,7 @@ use wm_platform::{CornerStyle, OpacityValue};
 use wm_platform::{Rect, WindowZOrder};
 
 use crate::{
-  models::{Container, WindowContainer},
+  models::{Container, WindowContainer, Workspace},
   traits::{CommonGetters, PositionGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
@@ -25,7 +25,7 @@ pub fn platform_sync(
   let focused_container =
     state.focused_container().context("No focused container.")?;
 
-  _ = auto_pan_viewport(&focused_container, state);
+  _ = auto_pan_viewport(&focused_container, state, config);
 
   if state.pending_sync.needs_focus_update() {
     sync_focus(&focused_container, state)?;
@@ -658,9 +658,65 @@ fn apply_transparency_effect(
   _ = window.native().set_transparency(transparency);
 }
 
+/// Smoothly animates the workspace `offset_x` to `target_offset` using
+/// lightweight discrete step interpolation.
+pub fn animate_pan_workspace(
+  workspace: &Workspace,
+  target_offset: f64,
+  config: &UserConfig,
+) {
+  let start_offset = workspace.offset_x();
+  let delta = target_offset - start_offset;
+
+  #[cfg(target_os = "windows")]
+  if config.value.general.animation_enabled && delta.abs() > 20.0 {
+    let duration_ms = config.value.general.animation_duration_ms.max(20);
+    let steps = (duration_ms / 16).clamp(3, 8);
+    let step_delay =
+      std::time::Duration::from_millis(u64::from(duration_ms) / u64::from(steps));
+
+    let tiling_windows: Vec<WindowContainer> = workspace
+      .descendants()
+      .filter_map(|c| c.as_window_container().ok())
+      .filter(|w| matches!(w.state(), WindowState::Tiling))
+      .collect();
+
+    for step in 1..steps {
+      #[allow(clippy::cast_precision_loss)]
+      let t = f64::from(step) / f64::from(steps);
+      // Ease-out quadratic formula
+      let progress = 1.0 - (1.0 - t) * (1.0 - t);
+      let intermediate_offset = start_offset + delta * progress;
+
+      workspace.set_offset_x(intermediate_offset);
+
+      let mut step_positions = Vec::new();
+      for win in &tiling_windows {
+        if let Ok(rect) = win.to_rect() {
+          if let Ok(border_delta) = win.total_border_delta() {
+            step_positions.push((
+              win.native().clone(),
+              rect.apply_delta(&border_delta, None),
+            ));
+          }
+        }
+      }
+
+      if !step_positions.is_empty() {
+        _ = wm_platform::apply_window_positions(&step_positions);
+      }
+
+      std::thread::sleep(step_delay);
+    }
+  }
+
+  workspace.set_offset_x(target_offset);
+}
+
 fn auto_pan_viewport(
   focused_container: &Container,
   state: &mut WmState,
+  config: &UserConfig,
 ) -> anyhow::Result<()> {
   let Ok(window) = focused_container.as_window_container() else {
     return Ok(());
@@ -685,10 +741,12 @@ fn auto_pan_viewport(
     new_offset = (current_offset + delta).max(0);
   }
 
-  if (f64::from(new_offset) - workspace.offset_x()).abs() > 0.001 {
-    workspace.set_offset_x(f64::from(new_offset));
+  let target_offset = f64::from(new_offset);
+  if (target_offset - workspace.offset_x()).abs() > 0.001 {
+    animate_pan_workspace(&workspace, target_offset, config);
     state.pending_sync.queue_container_to_redraw(workspace);
   }
 
   Ok(())
 }
+

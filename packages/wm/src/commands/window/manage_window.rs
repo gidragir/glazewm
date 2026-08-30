@@ -1,6 +1,8 @@
 use anyhow::Context;
 use tracing::info;
 use wm_common::{try_warn, WindowRuleEvent, WindowState, WmEvent};
+#[cfg(target_os = "windows")]
+use wm_platform::NativeWindowWindowsExt;
 use wm_platform::{NativeWindow, RectDelta};
 
 use crate::{
@@ -17,6 +19,7 @@ use crate::{
   wm_state::WmState,
 };
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn manage_window(
   native_window: NativeWindow,
   target_parent: Option<Container>,
@@ -32,7 +35,7 @@ pub fn manage_window(
   // Create the window instance. This may fail if the window handle has
   // already been destroyed.
   let window = try_warn!(create_window(
-    native_window,
+    native_window.clone(),
     native_properties,
     target_parent,
     state,
@@ -52,6 +55,11 @@ pub fn manage_window(
   )?;
 
   if let Some(window) = updated_window {
+    #[cfg(target_os = "windows")]
+    if window.state() == WindowState::Tiling {
+      _ = window.native().set_cloaked(true);
+    }
+
     info!("New window managed: {window}");
 
     state.emit_event(WmEvent::WindowManaged {
@@ -79,6 +87,11 @@ pub fn manage_window(
         window.into()
       },
     );
+  } else {
+    #[cfg(target_os = "windows")]
+    {
+      _ = native_window.set_cloaked(false);
+    }
   }
 
   Ok(())

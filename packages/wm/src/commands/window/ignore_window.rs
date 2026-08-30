@@ -19,6 +19,13 @@ pub fn ignore_window(
   let ancestors = window.ancestors().take(3).collect::<Vec<_>>();
 
   state.ignored_windows.push(window.native().clone());
+
+  #[cfg(target_os = "windows")]
+  {
+    use wm_platform::NativeWindowWindowsExt;
+    _ = window.native().set_cloaked(false);
+  }
+
   detach_container(window.clone().into())?;
 
   // After detaching the container, flatten any redundant split containers.

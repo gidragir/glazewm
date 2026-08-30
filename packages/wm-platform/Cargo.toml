@@ -29,10 +29,10 @@ regex = { workspace = true }
 test_utils = []
 
 [dev-dependencies]
-libtest-mimic-collect = "0.3.2"
+libtest-mimic-collect = "0.3.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.52", features = [
+windows = { version = "0.52.0", features = [
   "implement",
   "Win32_Devices_HumanInterfaceDevice",
   "Win32_Foundation",
@@ -54,7 +54,7 @@ windows = { version = "0.52", features = [
   "Win32_UI_TextServices",
   "Win32_UI_WindowsAndMessaging",
 ] }
-windows-interface = { version = "0.52" }
+windows-interface = { version = "0.52.0" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-core-graphics = "0.3.2"

@@ -469,7 +469,7 @@ fn deserialize_bindings<'de, D>(
 where
   D: serde::de::Deserializer<'de>,
 {
-  let s: Vec<&str> = serde::de::Deserialize::deserialize(deserializer)?;
+  let s: Vec<String> = serde::de::Deserialize::deserialize(deserializer)?;
   s.iter()
     .map(|keybinding_str| {
       let keys: Vec<Key> = keybinding_str
@@ -508,5 +508,22 @@ where
   #[cfg(not(target_os = "macos"))]
   {
     Ok(method)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_parse_sample_config() {
+    let sample =
+      include_str!("../../../resources/assets/sample-config.yaml");
+    let parsed: Result<ParsedConfig, _> = serde_yml::from_str(sample);
+    assert!(
+      parsed.is_ok(),
+      "Failed to parse sample config: {:?}",
+      parsed.err()
+    );
   }
 }

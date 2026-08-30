@@ -52,21 +52,28 @@ function SignFiles() {
 function DownloadZebarInstallers() {
   Write-Output "Downloading latest Zebar MSI's"
 
-  $latestRelease = 'https://api.github.com/repos/glzr-io/zebar/releases/latest'
-  $latestInstallers = Invoke-RestMethod $latestRelease | % assets | ? name -like "*.msi"
+  try {
+    $latestRelease = 'https://api.github.com/repos/glzr-io/zebar/releases/latest'
+    $headers = @{ "User-Agent" = "GlazeWM-Build" }
+    $response = Invoke-RestMethod $latestRelease -Headers $headers
+    $latestInstallers = $response.assets | Where-Object { $_.name -like "*.msi" }
 
-  $latestInstallers | ForEach-Object {
-    $outFile = Join-Path "out" $_.name
+    $latestInstallers | ForEach-Object {
+      $outFile = Join-Path "out" $_.name
 
-    # Rename the MSI files (e.g. `zebar-1.5.0-opt1-x64.msi` -> `zebar-x64.msi`).
-    if ($_.name -like "*-x64.msi") {
-      $outFile = "out/zebar-x64.msi"
+      # Rename the MSI files (e.g. `zebar-1.5.0-opt1-x64.msi` -> `zebar-x64.msi`).
+      if ($_.name -like "*-x64.msi") {
+        $outFile = "out/zebar-x64.msi"
+      }
+      elseif ($_.name -like "*-arm64.msi") {
+        $outFile = "out/zebar-arm64.msi"
+      }
+
+      Invoke-WebRequest $_.browser_download_url -OutFile $outFile
     }
-    elseif ($_.name -like "*-arm64.msi") {
-      $outFile = "out/zebar-arm64.msi"
-    }
-
-    Invoke-WebRequest $_.browser_download_url -OutFile $outFile
+  }
+  catch {
+    Write-Output "Warning: Could not download Zebar installers: $_"
   }
 }
 
@@ -103,6 +110,50 @@ function BuildExes() {
   }
 }
 
+function BuildPortablePackages() {
+  $archs = @("x64", "arm64")
+
+  foreach ($arch in $archs) {
+    $dir = "out/$arch"
+    if (Test-Path $dir) {
+      $portableDir = "out/glazewm-portable-$arch"
+      New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+
+      # Copy binaries
+      $requiredExes = @("glazewm.exe", "glazewm-cli.exe", "glazewm-watcher.exe")
+      foreach ($exe in $requiredExes) {
+        $src = Join-Path $dir $exe
+        if (Test-Path $src) {
+          Copy-Item -Path $src -Destination $portableDir
+        }
+      }
+
+      # Copy config example & docs
+      if (Test-Path "resources/assets/sample-config.yaml") {
+        Copy-Item -Path "resources/assets/sample-config.yaml" -Destination (Join-Path $portableDir "sample-config.yaml")
+        Copy-Item -Path "resources/assets/sample-config.yaml" -Destination (Join-Path $portableDir "config.yaml")
+      }
+      if (Test-Path "LICENSE") {
+        Copy-Item -Path "LICENSE" -Destination $portableDir
+      }
+      if (Test-Path "README.md") {
+        Copy-Item -Path "README.md" -Destination $portableDir
+      }
+
+      $zipName = "out/glazewm-v$VersionNumber-portable-$arch.zip"
+      if (Test-Path $zipName) {
+        Remove-Item -Force $zipName
+      }
+      Write-Output "Creating portable zip archive: $zipName"
+      Compress-Archive -Path "$portableDir/*" -DestinationPath $zipName -Force
+
+      # Also copy as generic name for CI convenience
+      Copy-Item -Path $zipName -Destination "out/glazewm-portable-$arch.zip" -Force
+      Remove-Item -Recurse -Force $portableDir
+    }
+  }
+}
+
 function BuildInstallers() {
   # WiX architectures to create installers for (x64 and arm64).
   $wixArchs = @("x64", "arm64")
@@ -122,15 +173,22 @@ function BuildInstallers() {
     -out "./out/unsigned-installer-universal.exe" "./resources/wix/bundle.wxs" `
     -d VERSION_NUMBER="$VersionNumber"
 
-  Write-Output "Detaching & reattaching Burn engine for signing"
-  wix burn detach "./out/unsigned-installer-universal.exe" -engine "./out/engine.exe"
-  SignFiles @("out/engine.exe")
+  if (Test-Path "./out/unsigned-installer-universal.exe") {
+    $hasSigningSecrets = ($ENV:AZ_VAULT_URL -and $ENV:AZ_CERT_NAME -and $ENV:AZ_CLIENT_ID -and $ENV:AZ_CLIENT_SECRET)
+    if ($hasSigningSecrets) {
+      Write-Output "Detaching & reattaching Burn engine for signing"
+      wix burn detach "./out/unsigned-installer-universal.exe" -engine "./out/engine.exe"
+      SignFiles @("out/engine.exe")
 
-  wix burn reattach "./out/unsigned-installer-universal.exe" `
-    -engine "./out/engine.exe" `
-    -o "./out/installer-universal.exe"
+      wix burn reattach "./out/unsigned-installer-universal.exe" `
+        -engine "./out/engine.exe" `
+        -o "./out/installer-universal.exe"
 
-  SignFiles @("out/installer-universal.exe")
+      SignFiles @("out/installer-universal.exe")
+    } else {
+      Copy-Item -Path "./out/unsigned-installer-universal.exe" -Destination "./out/installer-universal.exe" -Force
+    }
+  }
 }
 
 function Package() {
@@ -141,6 +199,7 @@ function Package() {
 
   DownloadZebarInstallers
   BuildExes
+  BuildPortablePackages
   BuildInstallers
 }
 

@@ -1,58 +1,125 @@
 name: Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       version_number:
         type: string
-        description: Version number to use for the build (e.g. `1.0.0`).
+        description: Version number to use for the build (e.g. `1.0.0` or `v1.0.0`).
+        required: false
 
 permissions:
   contents: write
 
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version_number: ${{ steps.version.outputs.version_number }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+    steps:
+      - id: version
+        run: |
+          if [ -n "${{ inputs.version_number }}" ]; then
+            RAW_VER="${{ inputs.version_number }}"
+            CLEAN_VER="${RAW_VER#v}"
+            TAG_NAME="v$CLEAN_VER"
+          elif [[ "${{ github.ref }}" =~ ^refs/tags/v.* ]]; then
+            CLEAN_VER="${GITHUB_REF_NAME#v}"
+            TAG_NAME="$GITHUB_REF_NAME"
+          else
+            CLEAN_VER="0.0.0"
+            TAG_NAME="v0.0.0"
+          fi
+          echo "version_number=$CLEAN_VER" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "Prepared release $TAG_NAME (version: $CLEAN_VER)"
+
   package:
+    needs: prepare
     uses: ./.github/workflows/package.yaml
     secrets: inherit
     with:
-      version_number: ${{ inputs.version_number }}
+      version_number: ${{ needs.prepare.outputs.version_number }}
 
   release:
-    needs: package
+    needs: [prepare, package]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Download installers
+      - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
           pattern: package-*
           merge-multiple: true
 
-      - name: Rename installers
+      - name: Organize release assets
         env:
-          # Add a `v` prefix to the version number.
-          VERSION: v${{ inputs.version_number }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+          RAW_VERSION: ${{ needs.prepare.outputs.version_number }}
         run: |
-          mv installer-universal.exe "glazewm-$VERSION.exe"
-          mv installer-arm64.msi "standalone-glazewm-$VERSION-arm64.msi"
-          mv installer-x64.msi "standalone-glazewm-$VERSION-x64.msi"
-          mv installer-universal.dmg "glazewm-$VERSION.dmg"
+          mkdir -p release-assets
 
-      - name: Create draft release
+          # Windows Universal Installer
+          if [ -f installer-universal.exe ]; then
+            cp installer-universal.exe "release-assets/glazewm-$TAG_NAME-installer.exe"
+          fi
+
+          # Windows MSI Installers
+          if [ -f installer-x64.msi ]; then
+            cp installer-x64.msi "release-assets/glazewm-$TAG_NAME-x64.msi"
+          fi
+          if [ -f installer-arm64.msi ]; then
+            cp installer-arm64.msi "release-assets/glazewm-$TAG_NAME-arm64.msi"
+          fi
+
+          # Portable Zip Packages
+          if [ -f "glazewm-v$RAW_VERSION-portable-x64.zip" ]; then
+            cp "glazewm-v$RAW_VERSION-portable-x64.zip" "release-assets/glazewm-$TAG_NAME-portable-x64.zip"
+          elif [ -f "glazewm-portable-x64.zip" ]; then
+            cp "glazewm-portable-x64.zip" "release-assets/glazewm-$TAG_NAME-portable-x64.zip"
+          fi
+
+          if [ -f "glazewm-v$RAW_VERSION-portable-arm64.zip" ]; then
+            cp "glazewm-v$RAW_VERSION-portable-arm64.zip" "release-assets/glazewm-$TAG_NAME-portable-arm64.zip"
+          elif [ -f "glazewm-portable-arm64.zip" ]; then
+            cp "glazewm-portable-arm64.zip" "release-assets/glazewm-$TAG_NAME-portable-arm64.zip"
+          fi
+
+          # macOS DMG
+          if [ -f installer-universal.dmg ]; then
+            cp installer-universal.dmg "release-assets/glazewm-$TAG_NAME.dmg"
+          fi
+
+          echo "Listing release assets:"
+          ls -lh release-assets/
+
+      - name: Create or update GitHub release
         env:
-          # Add a `v` prefix to the version number.
-          VERSION: v${{ inputs.version_number }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$VERSION" \
-            --title "$VERSION" \
+          ASSET_ARGS=()
+          for f in release-assets/*; do
+            if [ -f "$f" ]; then
+              ASSET_ARGS+=("$f")
+            fi
+          done
+
+          if [ ${#ASSET_ARGS[@]} -eq 0 ]; then
+            echo "Error: No release assets found to upload!"
+            exit 1
+          fi
+
+          gh release create "$TAG_NAME" "${ASSET_ARGS[@]}" \
+            --title "$TAG_NAME" \
             --generate-notes \
-            --draft \
-            "./glazewm-$VERSION.exe#$VERSION for Windows (standard)" \
-            "./standalone-glazewm-$VERSION-arm64.msi#$VERSION for Windows (standalone, arm64)" \
-            "./standalone-glazewm-$VERSION-x64.msi#$VERSION for Windows (standalone, x64)" \
-            "./glazewm-$VERSION.dmg#$VERSION for macOS"
+            --draft=false

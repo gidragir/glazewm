@@ -27,7 +27,7 @@ jobs:
     env:
       VERSION: ${{ inputs.version_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -55,11 +55,15 @@ jobs:
         run: |
           ./resources/scripts/package.ps1 -VersionNumber $env:VERSION
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: package-windows
           if-no-files-found: error
-          path: out/installer-*
+          path: |
+            out/installer-*
+            out/glazewm-*.zip
+            out/x64/*.exe
+            out/arm64/*.exe
 
   package-macos:
     needs: build
@@ -67,7 +71,7 @@ jobs:
     env:
       VERSION: ${{ inputs.version_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -87,6 +91,7 @@ jobs:
           done
 
       - name: Import signing certificate
+        if: env.APPLE_CERTIFICATE != ''
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -115,6 +120,7 @@ jobs:
 
       # Make sure to sign the binaries before they're copied into the app bundle.
       - name: Sign universal binaries
+        if: env.APPLE_SIGNING_IDENTITY != ''
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
@@ -157,6 +163,7 @@ jobs:
           echo -n "APPL????" > "$CONTENTS_DIR/PkgInfo"
 
       - name: Sign app bundle
+        if: env.APPLE_SIGNING_IDENTITY != ''
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
@@ -181,6 +188,7 @@ jobs:
             installer-universal.dmg
 
       - name: Sign DMG
+        if: env.APPLE_SIGNING_IDENTITY != ''
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
@@ -189,6 +197,7 @@ jobs:
             installer-universal.dmg
 
       - name: Notarize DMG
+        if: env.APPLE_ID != '' && env.APPLE_TEAM_ID != ''
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -205,7 +214,7 @@ jobs:
           xcrun stapler staple installer-universal.dmg
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: package-macos
           if-no-files-found: error

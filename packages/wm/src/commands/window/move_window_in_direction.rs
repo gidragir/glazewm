@@ -4,13 +4,12 @@ use wm_platform::{Direction, Rect};
 
 use crate::{
   commands::container::{
-    flatten_child_split_containers, flatten_split_container,
-    move_container_within_tree, resize_tiling_container,
-    set_focused_descendant, wrap_in_split_container,
+    flatten_split_container, move_container_within_tree,
+    set_focused_descendant,
   },
   models::{
-    DirectionContainer, Monitor, NonTilingWindow, SplitContainer,
-    TilingContainer, TilingWindow, WindowContainer,
+    DirectionContainer, Monitor, NonTilingWindow, TilingContainer,
+    TilingWindow, WindowContainer,
   },
   traits::{
     CommonGetters, PositionGetters, TilingDirectionGetters, WindowGetters,
@@ -26,11 +25,11 @@ pub fn move_window_in_direction(
   window: WindowContainer,
   direction: &Direction,
   state: &mut WmState,
-  config: &UserConfig,
+  _config: &UserConfig,
 ) -> anyhow::Result<()> {
   match window {
     WindowContainer::TilingWindow(window) => {
-      move_tiling_window(window, direction, state, config)
+      move_tiling_window(window, direction, state)
     }
     WindowContainer::NonTilingWindow(non_tiling_window) => {
       match non_tiling_window.state() {
@@ -52,7 +51,6 @@ fn move_tiling_window(
   window_to_move: TilingWindow,
   direction: &Direction,
   state: &mut WmState,
-  config: &UserConfig,
 ) -> anyhow::Result<()> {
   // Flatten the parent split container if it only contains the window.
   if let Some(split_parent) = window_to_move
@@ -106,24 +104,16 @@ fn move_tiling_window(
     })
   });
 
-  match target_ancestor {
-    // If there is no suitable ancestor, then change the tiling direction
-    // of the workspace.
-    None => invert_workspace_tiling_direction(
-      window_to_move,
-      direction,
-      state,
-      config,
-    ),
-    // Otherwise, move the container into the given ancestor. This could
-    // simply be the container's direct parent.
-    Some(target_ancestor) => insert_into_ancestor(
+  if let Some(target_ancestor) = target_ancestor {
+    insert_into_ancestor(
       &window_to_move,
       &target_ancestor,
       direction,
       state,
-    ),
+    )?;
   }
+
+  Ok(())
 }
 
 /// Gets the next sibling `TilingWindow` or `SplitContainer` in the given
@@ -145,63 +135,23 @@ fn tiling_sibling_in_direction(
 fn move_to_sibling_container(
   window_to_move: TilingWindow,
   target_sibling: TilingContainer,
-  direction: &Direction,
+  _direction: &Direction,
   state: &mut WmState,
 ) -> anyhow::Result<()> {
   let parent = window_to_move.parent().context("No parent.")?;
 
-  match target_sibling {
-    TilingContainer::TilingWindow(sibling_window) => {
-      // Swap the window with sibling in given direction.
-      move_container_within_tree(
-        &window_to_move.clone().into(),
-        &parent,
-        sibling_window.index(),
-        state,
-      )?;
+  // Swap the window with sibling in given direction.
+  move_container_within_tree(
+    &window_to_move.clone().into(),
+    &parent,
+    target_sibling.index(),
+    state,
+  )?;
 
-      state
-        .pending_sync
-        .queue_container_to_redraw(sibling_window)
-        .queue_container_to_redraw(window_to_move);
-    }
-    TilingContainer::Split(sibling_split) => {
-      let sibling_descendant =
-        sibling_split.descendant_in_direction(&direction.inverse());
-
-      // Move the window into the sibling split container.
-      if let Some(sibling_descendant) = sibling_descendant {
-        let target_parent = sibling_descendant
-          .direction_container()
-          .context("No direction container.")?;
-
-        let has_matching_tiling_direction =
-          TilingDirection::from_direction(direction)
-            == target_parent.tiling_direction();
-
-        let target_index = match direction {
-          Direction::Down | Direction::Right
-            if has_matching_tiling_direction =>
-          {
-            sibling_descendant.index()
-          }
-          _ => sibling_descendant.index() + 1,
-        };
-
-        move_container_within_tree(
-          &window_to_move.into(),
-          &target_parent.clone().into(),
-          target_index,
-          state,
-        )?;
-
-        state
-          .pending_sync
-          .queue_container_to_redraw(target_parent)
-          .queue_containers_to_redraw(parent.tiling_children());
-      }
-    }
-  }
+  state
+    .pending_sync
+    .queue_container_to_redraw(target_sibling)
+    .queue_container_to_redraw(window_to_move);
 
   Ok(())
 }
@@ -276,69 +226,6 @@ fn move_to_workspace_in_direction(
   Ok(())
 }
 
-fn invert_workspace_tiling_direction(
-  window_to_move: TilingWindow,
-  direction: &Direction,
-  state: &mut WmState,
-  config: &UserConfig,
-) -> anyhow::Result<()> {
-  let workspace = window_to_move.workspace().context("No workspace.")?;
-
-  // Get top-level tiling children of the workspace.
-  let workspace_children = workspace
-    .tiling_children()
-    .filter(|container| container.id() != window_to_move.id())
-    .collect::<Vec<_>>();
-
-  // Create a new split container to wrap the window's siblings. For
-  // example, in the layout H[1 V[2 3]] where container 3 is moved down,
-  // we create a split container around 1 and 2. This results in
-  // H[H[1 V[2 3]]], and V[H[1 V[2]] 3] after the tiling direction change.
-  if workspace_children.len() > 1 {
-    let split_container = SplitContainer::new(
-      workspace.tiling_direction(),
-      config.value.gaps.clone(),
-    );
-
-    wrap_in_split_container(
-      &split_container,
-      &workspace.clone().into(),
-      &workspace_children,
-    )?;
-  }
-
-  // Invert the tiling direction of the workspace.
-  workspace.set_tiling_direction(workspace.tiling_direction().inverse());
-
-  let target_index = match direction {
-    Direction::Left | Direction::Up => 0,
-    _ => workspace.child_count(),
-  };
-
-  // Depending on the direction, place the window either before or after
-  // the split container.
-  move_container_within_tree(
-    &window_to_move.clone().into(),
-    &workspace.clone().into(),
-    target_index,
-    state,
-  )?;
-
-  // Workspace might have redundant split containers after the tiling
-  // direction change. For example, V[H[1 2] 3] where container 3 is moved
-  // up results in H[3 H[1 2]], and needs to be flattened to H[3 1 2].
-  flatten_child_split_containers(&workspace.clone().into())?;
-
-  // Resize the window such that the split container and window are each
-  // 0.5.
-  resize_tiling_container(&window_to_move.into(), 0.5);
-
-  state
-    .pending_sync
-    .queue_containers_to_redraw(workspace.tiling_children());
-
-  Ok(())
-}
 
 fn insert_into_ancestor(
   window_to_move: &TilingWindow,
@@ -523,4 +410,166 @@ fn snap_to_monitor_edge(
   };
 
   window_pos.translate_to_coordinates(x, y)
+}
+
+#[cfg(test)]
+mod tests {
+  use wm_common::TilingDirection;
+  use wm_platform::Direction;
+
+  use super::*;
+  use crate::{
+    models::{SplitContainer, Workspace},
+    traits::{CommonGetters, TilingDirectionGetters, TilingSizeGetters},
+  };
+
+  #[test]
+  fn vertical_move_on_horizontal_workspace_preserves_layout_and_sizes() {
+    let mut state = WmState::mock();
+    let config = UserConfig::mock();
+
+    let win1 = TilingWindow::mock().tiling_size(0.25).call();
+    let win2 = TilingWindow::mock().tiling_size(0.75).call();
+    let win3 = TilingWindow::mock().tiling_size(0.50).call();
+    let win4 = TilingWindow::mock().tiling_size(0.50).call();
+
+    let workspace = Workspace::mock()
+      .tiling_direction(TilingDirection::Horizontal)
+      .tiling_containers(vec![
+        win1.clone().into(),
+        win2.clone().into(),
+        win3.clone().into(),
+        win4.clone().into(),
+      ])
+      .call();
+
+    let monitor = Monitor::mock().workspaces(vec![workspace.clone()]).call();
+    let _ = monitor;
+
+    // Moving win4 Down should be a safe no-op on infinite horizontal canvas
+    move_window_in_direction(
+      win4.clone().into(),
+      &Direction::Down,
+      &mut state,
+      &config,
+    )
+    .unwrap();
+
+    assert_eq!(workspace.tiling_direction(), TilingDirection::Horizontal);
+    assert_eq!(workspace.child_count(), 4);
+    assert!((win1.tiling_size() - 0.25).abs() < f32::EPSILON);
+    assert!((win2.tiling_size() - 0.75).abs() < f32::EPSILON);
+    assert!((win3.tiling_size() - 0.50).abs() < f32::EPSILON);
+    assert!((win4.tiling_size() - 0.50).abs() < f32::EPSILON);
+
+    // Moving win4 Up should also be a safe no-op
+    move_window_in_direction(
+      win4.clone().into(),
+      &Direction::Up,
+      &mut state,
+      &config,
+    )
+    .unwrap();
+
+    assert_eq!(workspace.tiling_direction(), TilingDirection::Horizontal);
+    assert_eq!(workspace.child_count(), 4);
+    assert!((win1.tiling_size() - 0.25).abs() < f32::EPSILON);
+    assert!((win2.tiling_size() - 0.75).abs() < f32::EPSILON);
+    assert!((win3.tiling_size() - 0.50).abs() < f32::EPSILON);
+    assert!((win4.tiling_size() - 0.50).abs() < f32::EPSILON);
+  }
+
+  #[test]
+  fn vertical_move_within_vertical_split_swaps_siblings() {
+    let mut state = WmState::mock();
+    let config = UserConfig::mock();
+
+    let win_a = TilingWindow::mock().tiling_size(0.4).call();
+    let win_b = TilingWindow::mock().tiling_size(0.6).call();
+
+    let split = SplitContainer::mock()
+      .tiling_direction(TilingDirection::Vertical)
+      .tiling_containers(vec![win_a.clone().into(), win_b.clone().into()])
+      .call();
+    split.set_tiling_size(0.5);
+
+    let win_c = TilingWindow::mock().tiling_size(0.5).call();
+
+    let workspace = Workspace::mock()
+      .tiling_direction(TilingDirection::Horizontal)
+      .tiling_containers(vec![split.clone().into(), win_c.clone().into()])
+      .call();
+
+    let monitor = Monitor::mock().workspaces(vec![workspace.clone()]).call();
+    let _ = monitor;
+
+    // Moving win_a Down should swap with win_b in the vertical column
+    move_window_in_direction(
+      win_a.clone().into(),
+      &Direction::Down,
+      &mut state,
+      &config,
+    )
+    .unwrap();
+
+    assert_eq!(workspace.tiling_direction(), TilingDirection::Horizontal);
+    assert_eq!(split.child_count(), 2);
+    assert_eq!(win_b.index(), 0);
+    assert_eq!(win_a.index(), 1);
+    assert!((split.tiling_size() - 0.5).abs() < f32::EPSILON);
+    assert!((win_c.tiling_size() - 0.5).abs() < f32::EPSILON);
+
+    // Moving win_a Down again (now at bottom) should safely no-op
+    move_window_in_direction(
+      win_a.clone().into(),
+      &Direction::Down,
+      &mut state,
+      &config,
+    )
+    .unwrap();
+
+    assert_eq!(workspace.tiling_direction(), TilingDirection::Horizontal);
+    assert_eq!(split.child_count(), 2);
+    assert_eq!(win_a.index(), 1);
+  }
+
+  #[test]
+  fn horizontal_move_swaps_with_split_container_without_merging() {
+    let mut state = WmState::mock();
+    let config = UserConfig::mock();
+
+    let win_a = TilingWindow::mock().call();
+    let win_b = TilingWindow::mock().call();
+
+    let split = SplitContainer::mock()
+      .tiling_direction(TilingDirection::Vertical)
+      .tiling_containers(vec![win_a.clone().into(), win_b.clone().into()])
+      .call();
+
+    let win_c = TilingWindow::mock().call();
+
+    let workspace = Workspace::mock()
+      .tiling_direction(TilingDirection::Horizontal)
+      .tiling_containers(vec![split.clone().into(), win_c.clone().into()])
+      .call();
+
+    let _monitor =
+      Monitor::mock().workspaces(vec![workspace.clone()]).call();
+
+    // Moving win_c Left should swap places with the `split` column, NOT merge into it
+    move_window_in_direction(
+      win_c.clone().into(),
+      &Direction::Left,
+      &mut state,
+      &config,
+    )
+    .unwrap();
+
+    assert_eq!(workspace.child_count(), 2);
+    assert_eq!(win_c.index(), 0);
+    assert_eq!(split.index(), 1);
+    assert_eq!(split.child_count(), 2);
+    assert_eq!(win_a.index(), 0);
+    assert_eq!(win_b.index(), 1);
+  }
 }

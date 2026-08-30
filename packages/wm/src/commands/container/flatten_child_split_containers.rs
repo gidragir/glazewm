@@ -24,7 +24,7 @@ pub fn flatten_child_split_containers(
       .filter(|child| child.is_tiling_window() || child.is_split())
       .collect::<Vec<_>>();
 
-    if tiling_children.len() == 1 {
+    if tiling_children.len() == 1 && parent.is_split() {
       // Handle case where the parent is a split container and has a
       // single split container child.
       if let Some(split_child) = tiling_children[0].as_split() {

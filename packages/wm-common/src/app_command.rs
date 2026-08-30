@@ -260,6 +260,8 @@ pub enum InvokeCommand {
     #[clap(long, num_args = 1..)]
     presets: Option<Vec<LengthValue>>,
   },
+  ConsumeOrExpelWindowLeft,
+  ConsumeOrExpelWindowRight,
   SetColumnWidth {
     #[clap(long, allow_hyphen_values = true)]
     width: LengthValue,

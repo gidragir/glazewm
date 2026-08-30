@@ -31,8 +31,9 @@ function SignFiles() {
   )
 
   foreach ($secret in $secrets) {
-    if (!(Test-Path "env:$secret")) {
-      Write-Output "Skipping signing due to missing secret '$secret'."
+    $val = [Environment]::GetEnvironmentVariable($secret)
+    if ([string]::IsNullOrWhiteSpace($val)) {
+      Write-Output "Skipping signing due to missing or empty secret '$secret'."
       Return
     }
   }
@@ -174,7 +175,10 @@ function BuildInstallers() {
     -d VERSION_NUMBER="$VersionNumber"
 
   if (Test-Path "./out/unsigned-installer-universal.exe") {
-    $hasSigningSecrets = ($ENV:AZ_VAULT_URL -and $ENV:AZ_CERT_NAME -and $ENV:AZ_CLIENT_ID -and $ENV:AZ_CLIENT_SECRET)
+    $hasSigningSecrets = ![string]::IsNullOrWhiteSpace($ENV:AZ_VAULT_URL) -and
+                         ![string]::IsNullOrWhiteSpace($ENV:AZ_CERT_NAME) -and
+                         ![string]::IsNullOrWhiteSpace($ENV:AZ_CLIENT_ID) -and
+                         ![string]::IsNullOrWhiteSpace($ENV:AZ_CLIENT_SECRET)
     if ($hasSigningSecrets) {
       Write-Output "Detaching & reattaching Burn engine for signing"
       wix burn detach "./out/unsigned-installer-universal.exe" -engine "./out/engine.exe"

@@ -18,12 +18,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # MacOS (Intel)
-          - platform: macos-latest
-            target: x86_64-apple-darwin
-          # MacOS (Apple Silicon)
-          - platform: macos-latest
-            target: aarch64-apple-darwin
           # 64-bit Windows (Intel & AMD)
           - platform: windows-latest
             target: x86_64-pc-windows-msvc

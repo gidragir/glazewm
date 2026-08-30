@@ -94,11 +94,6 @@ jobs:
             cp "glazewm-portable-arm64.zip" "release-assets/glazewm-$TAG_NAME-portable-arm64.zip"
           fi
 
-          # macOS DMG
-          if [ -f installer-universal.dmg ]; then
-            cp installer-universal.dmg "release-assets/glazewm-$TAG_NAME.dmg"
-          fi
-
           echo "Listing release assets:"
           ls -lh release-assets/
 

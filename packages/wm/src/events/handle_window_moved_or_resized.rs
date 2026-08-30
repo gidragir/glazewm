@@ -76,10 +76,17 @@ pub fn handle_window_moved_or_resized(
     let old_is_maximized = window.native_properties().is_maximized;
     let is_maximized = try_warn!(window.native().is_maximized());
 
-    // Ignore duplicate move/resize events. Window position changes can
-    // trigger multiple events. For example, restoring from maximized can
-    // trigger as many as 4 identical events on Windows.
-    if old_frame_position == frame_position
+    // Ignore duplicate or near-duplicate move/resize events (e.g. from DWM
+    // subpixel rounding). Window position changes can trigger multiple
+    // events. For example, restoring from maximized can trigger as many as 4
+    // identical events on Windows.
+    let is_same_frame = old_frame_position == frame_position
+      || ((old_frame_position.x() - frame_position.x()).abs() <= 2
+        && (old_frame_position.y() - frame_position.y()).abs() <= 2
+        && (old_frame_position.width() - frame_position.width()).abs() <= 2
+        && (old_frame_position.height() - frame_position.height()).abs() <= 2);
+
+    if is_same_frame
       && old_is_maximized == is_maximized
       && !is_interactive_start
     {

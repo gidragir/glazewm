@@ -258,3 +258,26 @@ impl Workspace {
     workspace
   }
 }
+
+impl crate::wm_state::WmState {
+  #[must_use]
+  pub fn mock() -> Self {
+    let (event_tx, _) = tokio::sync::mpsc::unbounded_channel();
+    let (exit_tx, _) = tokio::sync::mpsc::unbounded_channel();
+    Self::new(wm_platform::Dispatcher::mock(), event_tx, exit_tx)
+  }
+}
+
+impl crate::user_config::UserConfig {
+  #[must_use]
+  pub fn mock() -> Self {
+    let value = wm_common::ParsedConfig::default();
+    let window_rules_by_event = Self::window_rules_by_event(&value);
+    Self {
+      path: std::path::PathBuf::new(),
+      value,
+      value_str: String::new(),
+      window_rules_by_event,
+    }
+  }
+}

@@ -28,7 +28,8 @@ pub struct UserConfig {
 
   /// Hashmap of window rule event types (e.g. `WindowRuleEvent::Manage`)
   /// and the corresponding window rules of that type.
-  window_rules_by_event: HashMap<WindowRuleEvent, Vec<WindowRuleConfig>>,
+  pub(crate) window_rules_by_event:
+    HashMap<WindowRuleEvent, Vec<WindowRuleConfig>>,
 }
 
 impl UserConfig {
@@ -193,7 +194,7 @@ impl UserConfig {
     window_rules
   }
 
-  fn window_rules_by_event(
+  pub(crate) fn window_rules_by_event(
     config_value: &ParsedConfig,
   ) -> HashMap<WindowRuleEvent, Vec<WindowRuleConfig>> {
     let mut window_rules_by_event = HashMap::new();

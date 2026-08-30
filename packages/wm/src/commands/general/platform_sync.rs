@@ -25,6 +25,8 @@ pub fn platform_sync(
   let focused_container =
     state.focused_container().context("No focused container.")?;
 
+  _ = auto_pan_viewport(&focused_container, state);
+
   if state.pending_sync.needs_focus_update() {
     sync_focus(&focused_container, state)?;
   }
@@ -206,6 +208,44 @@ fn redraw_containers(
 
   // Get monitors by their optimal hide corner.
   let monitors_by_hide_corner = state.monitors_by_hide_corner();
+
+  #[cfg(target_os = "windows")]
+  {
+    let mut batch_positions: Vec<(wm_platform::NativeWindow, Rect)> =
+      Vec::new();
+    for window in &windows_to_update {
+      if !windows_to_redraw.contains(window) {
+        continue;
+      }
+      let Some(workspace) = window.workspace() else {
+        continue;
+      };
+
+      if !workspace.is_displayed() {
+        continue;
+      }
+      if matches!(window.state(), WindowState::Tiling)
+        && window.active_drag().is_none()
+      {
+        if let Ok(rect) = window.to_rect() {
+          if let Ok(delta) = window.total_border_delta() {
+            batch_positions.push((
+              window.native().clone(),
+              rect.apply_delta(&delta, None),
+            ));
+          }
+        }
+      }
+    }
+
+    if !batch_positions.is_empty() {
+      if let Err(err) =
+        wm_platform::apply_window_positions(&batch_positions)
+      {
+        tracing::warn!("Failed to batch apply window positions: {}", err);
+      }
+    }
+  }
 
   for window in windows_to_update.iter().rev() {
     let should_bring_to_front = windows_to_bring_to_front.contains(window);
@@ -616,4 +656,38 @@ fn apply_transparency_effect(
   };
 
   _ = window.native().set_transparency(transparency);
+}
+
+fn auto_pan_viewport(
+  focused_container: &Container,
+  state: &mut WmState,
+) -> anyhow::Result<()> {
+  let Ok(window) = focused_container.as_window_container() else {
+    return Ok(());
+  };
+
+  let Some(workspace) = window.workspace() else {
+    return Ok(());
+  };
+
+  let workspace_rect = workspace.to_rect()?;
+  let window_rect = window.to_rect()?;
+
+  let current_offset = workspace.offset_x() as i32;
+  let mut new_offset = current_offset;
+
+  if window_rect.left < workspace_rect.left {
+    let delta = window_rect.left - workspace_rect.left;
+    new_offset = (current_offset + delta).max(0);
+  } else if window_rect.right > workspace_rect.right {
+    let delta = window_rect.right - workspace_rect.right;
+    new_offset = (current_offset + delta).max(0);
+  }
+
+  if (new_offset as f64 - workspace.offset_x()).abs() > 0.001 {
+    workspace.set_offset_x(new_offset as f64);
+    state.pending_sync.queue_container_to_redraw(workspace);
+  }
+
+  Ok(())
 }

@@ -32,6 +32,7 @@ struct WorkspaceInner {
   config: WorkspaceConfig,
   gaps_config: GapsConfig,
   tiling_direction: TilingDirection,
+  offset_x: f64,
 }
 
 impl Workspace {
@@ -48,9 +49,18 @@ impl Workspace {
       config,
       gaps_config,
       tiling_direction,
+      offset_x: 0.0,
     };
 
     Self(Rc::new(RefCell::new(workspace)))
+  }
+
+  pub fn offset_x(&self) -> f64 {
+    self.0.borrow().offset_x
+  }
+
+  pub fn set_offset_x(&self, offset_x: f64) {
+    self.0.borrow_mut().offset_x = offset_x;
   }
 
   /// Underlying config for the workspace.
@@ -173,6 +183,7 @@ impl Workspace {
       x: rect.x(),
       y: rect.y(),
       tiling_direction: self.tiling_direction(),
+      offset_x: self.offset_x(),
     }))
   }
 }

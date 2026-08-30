@@ -134,20 +134,30 @@ impl WindowListener {
         window_id: WindowId(handle.0),
         notification,
       },
-      EVENT_SYSTEM_FOREGROUND => WindowEvent::Focused {
-        window: NativeWindow::new(handle.0).into(),
-        notification,
-      },
+      EVENT_SYSTEM_FOREGROUND => {
+        if is_hwnd_cloaked(handle) {
+          return;
+        }
+        WindowEvent::Focused {
+          window: NativeWindow::new(handle.0).into(),
+          notification,
+        }
+      }
       EVENT_OBJECT_HIDE | EVENT_OBJECT_CLOAKED => WindowEvent::Hidden {
         window: NativeWindow::new(handle.0).into(),
         notification,
       },
-      EVENT_OBJECT_LOCATIONCHANGE => WindowEvent::MovedOrResized {
-        window: NativeWindow::new(handle.0).into(),
-        is_interactive_start: false,
-        is_interactive_end: false,
-        notification,
-      },
+      EVENT_OBJECT_LOCATIONCHANGE => {
+        if is_hwnd_cloaked(handle) {
+          return;
+        }
+        WindowEvent::MovedOrResized {
+          window: NativeWindow::new(handle.0).into(),
+          is_interactive_start: false,
+          is_interactive_end: false,
+          notification,
+        }
+      }
       EVENT_SYSTEM_MINIMIZESTART => WindowEvent::Minimized {
         window: NativeWindow::new(handle.0).into(),
         notification,
@@ -168,10 +178,15 @@ impl WindowListener {
         is_interactive_end: true,
         notification,
       },
-      EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED => WindowEvent::Shown {
-        window: NativeWindow::new(handle.0).into(),
-        notification,
-      },
+      EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED => {
+        if event_type == EVENT_OBJECT_SHOW && is_hwnd_cloaked(handle) {
+          return;
+        }
+        WindowEvent::Shown {
+          window: NativeWindow::new(handle.0).into(),
+          notification,
+        }
+      }
       EVENT_OBJECT_NAMECHANGE => WindowEvent::TitleChanged {
         window: NativeWindow::new(handle.0).into(),
         notification,
@@ -183,6 +198,20 @@ impl WindowListener {
       tracing::warn!("Failed to send window event: {}.", err);
     }
   }
+}
+
+fn is_hwnd_cloaked(handle: HWND) -> bool {
+  let mut cloaked = 0u32;
+  let dwm_res = unsafe {
+    #[allow(clippy::cast_possible_truncation)]
+    windows::Win32::Graphics::Dwm::DwmGetWindowAttribute(
+      handle,
+      windows::Win32::Graphics::Dwm::DWMWA_CLOAKED,
+      std::ptr::from_mut::<u32>(&mut cloaked).cast(),
+      std::mem::size_of::<u32>() as u32,
+    )
+  };
+  dwm_res.is_ok() && cloaked != 0
 }
 
 impl Drop for WindowListener {

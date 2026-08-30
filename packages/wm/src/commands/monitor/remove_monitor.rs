@@ -21,12 +21,6 @@ pub fn remove_monitor(
 ) -> anyhow::Result<()> {
   info!("Removing monitor: {monitor}");
 
-  let target_monitor = state
-    .monitors()
-    .into_iter()
-    .find(|m| m.id() != monitor.id())
-    .context("No target monitor to move workspaces.")?;
-
   // Avoid moving empty workspaces.
   let workspaces_to_move =
     monitor.workspaces().into_iter().filter(|workspace| {
@@ -34,6 +28,14 @@ pub fn remove_monitor(
     });
 
   for workspace in workspaces_to_move {
+    // Find active monitor with the lowest workspace count.
+    let target_monitor = state
+      .monitors()
+      .into_iter()
+      .filter(|m| m.id() != monitor.id())
+      .min_by_key(|m| m.workspaces().len())
+      .context("No target monitor to move workspaces.")?;
+
     // Move workspace to target monitor.
     move_container_within_tree(
       &workspace.clone().into(),

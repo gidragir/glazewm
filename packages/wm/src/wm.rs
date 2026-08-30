@@ -763,6 +763,30 @@ impl WindowManager {
       InvokeCommand::WmEnableBindingMode { name } => {
         enable_binding_mode(name, state, config)
       }
+      InvokeCommand::PanViewportLeft { amount } => {
+        let delta = amount.unwrap_or(150.0);
+        let workspace = subject_container.workspace().or_else(|| {
+          state.focused_container().and_then(|c| c.workspace())
+        });
+        if let Some(workspace) = workspace {
+          let new_offset = (workspace.offset_x() - delta).max(0.0);
+          workspace.set_offset_x(new_offset);
+          state.pending_sync.queue_container_to_redraw(workspace);
+        }
+        Ok(())
+      }
+      InvokeCommand::PanViewportRight { amount } => {
+        let delta = amount.unwrap_or(150.0);
+        let workspace = subject_container.workspace().or_else(|| {
+          state.focused_container().and_then(|c| c.workspace())
+        });
+        if let Some(workspace) = workspace {
+          let new_offset = workspace.offset_x() + delta;
+          workspace.set_offset_x(new_offset);
+          state.pending_sync.queue_container_to_redraw(workspace);
+        }
+        Ok(())
+      }
       InvokeCommand::WmExit => state.emit_exit(),
       InvokeCommand::WmRedraw => {
         state

@@ -256,6 +256,14 @@ pub enum InvokeCommand {
     #[clap(long)]
     name: String,
   },
+  PanViewportLeft {
+    #[clap(long, default_value = "150")]
+    amount: Option<f64>,
+  },
+  PanViewportRight {
+    #[clap(long, default_value = "150")]
+    amount: Option<f64>,
+  },
   WmExit,
   WmRedraw,
   WmReloadConfig,

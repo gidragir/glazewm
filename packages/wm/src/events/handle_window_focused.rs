@@ -9,7 +9,7 @@ use crate::{
     workspace::focus_workspace,
   },
   models::WorkspaceTarget,
-  traits::{CommonGetters, WindowGetters},
+  traits::{CommonGetters, PositionGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
 };
@@ -83,6 +83,29 @@ pub fn handle_window_focused(
 
     // Update the WM's focus state.
     set_focused_descendant(&window.clone().into(), None);
+
+    // Auto-pan viewport to bring focused window into view if needed.
+    if let (Ok(workspace_rect), Ok(window_rect)) =
+      (workspace.to_rect(), window.to_rect())
+    {
+      let current_offset = workspace.offset_x() as i32;
+      let mut new_offset = current_offset;
+
+      if window_rect.left < workspace_rect.left {
+        let delta = window_rect.left - workspace_rect.left;
+        new_offset = (current_offset + delta).max(0);
+      } else if window_rect.right > workspace_rect.right {
+        let delta = window_rect.right - workspace_rect.right;
+        new_offset = (current_offset + delta).max(0);
+      }
+
+      if (new_offset as f64 - workspace.offset_x()).abs() > 0.001 {
+        workspace.set_offset_x(new_offset as f64);
+        state
+          .pending_sync
+          .queue_container_to_redraw(workspace.clone());
+      }
+    }
 
     // Run window rules for focus events.
     run_window_rules(

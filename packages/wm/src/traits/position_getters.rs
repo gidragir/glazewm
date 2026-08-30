@@ -45,15 +45,21 @@ macro_rules! impl_position_getters_as_resizable {
             (parent_rect.width(), height)
           }
           TilingDirection::Horizontal => {
-            let available_width = parent_rect.width()
-              - inner_gap * self.tiling_siblings().count() as i32;
-
-            let width =
-              (available_width as f32 * self.tiling_size()).round() as i32;
+            let width = if parent.as_workspace().is_some() {
+              (parent_rect.width() as f32 * self.tiling_size()).round()
+                as i32
+            } else {
+              let available_width = parent_rect.width()
+                - inner_gap * self.tiling_siblings().count() as i32;
+              (available_width as f32 * self.tiling_size()).round() as i32
+            };
 
             (width, parent_rect.height())
           }
         };
+
+        let offset_x =
+          self.workspace().map(|ws| ws.offset_x() as i32).unwrap_or(0);
 
         let (x, y) = {
           let mut prev_siblings = self
@@ -61,7 +67,13 @@ macro_rules! impl_position_getters_as_resizable {
             .filter_map(|sibling| sibling.as_tiling_container().ok());
 
           match prev_siblings.next() {
-            None => (parent_rect.x(), parent_rect.y()),
+            None => {
+              if parent.tiling_direction() == TilingDirection::Horizontal {
+                (parent_rect.x() - offset_x, parent_rect.y())
+              } else {
+                (parent_rect.x(), parent_rect.y())
+              }
+            }
             Some(sibling) => {
               let sibling_rect = sibling.to_rect()?;
 

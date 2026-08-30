@@ -566,3 +566,24 @@ impl PartialEq for NativeWindow {
 }
 
 impl Eq for NativeWindow {}
+
+/// Repositions and resizes a batch of windows atomically.
+pub fn apply_window_positions(
+  positions: &[(NativeWindow, Rect)],
+) -> crate::Result<()> {
+  #[cfg(target_os = "windows")]
+  {
+    let inner_positions = positions
+      .iter()
+      .map(|(w, r)| (w.inner.clone(), r.clone()))
+      .collect::<Vec<_>>();
+    platform_impl::apply_window_positions(&inner_positions)
+  }
+  #[cfg(not(target_os = "windows"))]
+  {
+    for (window, rect) in positions {
+      window.set_frame(rect)?;
+    }
+    Ok(())
+  }
+}

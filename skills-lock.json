@@ -24,6 +24,12 @@
       "sourceType": "local",
       "skillPath": ".agents/skills/rust-analyze-package/SKILL.md",
       "computedHash": "1b3282b1b90919e1305d468bbce1b5610c498dadde5dac1e0806743f9e58b3ba"
+    },
+    "project-idea": {
+      "source": "local",
+      "sourceType": "local",
+      "skillPath": ".agents/skills/project-idea/SKILL.md",
+      "computedHash": "9d0a02c40251150ddf6e4a395b0f0e4d586d45d291a3d4dbf078717264f87050"
     }
   }
 }

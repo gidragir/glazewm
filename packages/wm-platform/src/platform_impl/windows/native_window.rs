@@ -21,6 +21,7 @@ use windows::{
         SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEINPUT,
       },
       WindowsAndMessaging::{
+        BeginDeferWindowPos, DeferWindowPos, EndDeferWindowPos,
         EnumWindows, GetAncestor, GetClassNameW, GetDesktopWindow,
         GetForegroundWindow, GetLayeredWindowAttributes, GetShellWindow,
         GetWindow, GetWindowLongPtrW, GetWindowRect, GetWindowTextW,
@@ -748,6 +749,44 @@ impl From<NativeWindow> for crate::NativeWindow {
   fn from(window: NativeWindow) -> Self {
     crate::NativeWindow { inner: window }
   }
+}
+
+/// Batch positions multiple windows using `DeferWindowPos` to minimize DWM
+/// stuttering.
+pub(crate) fn apply_window_positions(
+  positions: &[(NativeWindow, Rect)],
+) -> crate::Result<()> {
+  if positions.is_empty() {
+    return Ok(());
+  }
+
+  #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+  let count = positions.len() as i32;
+
+  let mut hdwp = unsafe { BeginDeferWindowPos(count) }?;
+
+  for (window, rect) in positions {
+    hdwp = unsafe {
+      DeferWindowPos(
+        hdwp,
+        window.hwnd(),
+        HWND_NOTOPMOST,
+        rect.x(),
+        rect.y(),
+        rect.width(),
+        rect.height(),
+        SWP_NOACTIVATE
+          | SWP_NOZORDER
+          | SWP_NOCOPYBITS
+          | SWP_NOSENDCHANGING
+          | SWP_FRAMECHANGED,
+      )
+    }?;
+  }
+
+  unsafe { EndDeferWindowPos(hdwp) }?;
+
+  Ok(())
 }
 
 /// Implements [`Dispatcher::visible_windows`].

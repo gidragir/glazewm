@@ -1,6 +1,10 @@
 use tauri_winres::VersionInfo;
 
 fn main() {
+  if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+    return;
+  }
+
   println!("cargo:rerun-if-env-changed=VERSION_NUMBER");
   let mut res = tauri_winres::WindowsResource::new();
 
@@ -13,7 +17,8 @@ fn main() {
   res.set("ProductName", "GlazeWM CLI");
   res.set("FileDescription", "GlazeWM CLI");
 
-  let version_parts = env!("VERSION_NUMBER")
+  let version_env = option_env!("VERSION_NUMBER").unwrap_or("0.0.0");
+  let version_parts = version_env
     .split('.')
     .take(3)
     .map(|part| part.parse().unwrap_or(0))
@@ -33,5 +38,7 @@ fn main() {
   res.set_version_info(VersionInfo::FILEVERSION, version_u64);
   res.set_version_info(VersionInfo::PRODUCTVERSION, version_u64);
 
-  res.compile().unwrap();
+  if let Err(err) = res.compile() {
+    eprintln!("cargo:warning=Failed to compile Windows resource: {err}");
+  }
 }

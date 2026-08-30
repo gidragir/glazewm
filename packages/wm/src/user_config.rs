@@ -71,9 +71,9 @@ impl UserConfig {
     let config_str = fs::read_to_string(config_path)
       .context("Unable to read config file.")?;
 
-    // TODO: Improve error formatting of serde_yaml errors. Something
+    // TODO: Improve error formatting of serde_yml errors. Something
     // similar to https://github.com/AlexanderThaller/format_serde_error
-    let config_value = serde_yaml::from_str(&config_str)?;
+    let config_value = serde_yml::from_str(&config_str)?;
 
     Ok((config_value, config_str))
   }

@@ -3,6 +3,12 @@ resolver = "2"
 members = ["packages/*"]
 default-members = ["packages/wm", "packages/wm-cli"]
 
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/glzr-io/glazewm"
+
 [workspace.dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
 clap = { version = "4", features = ["derive"] }
@@ -10,6 +16,7 @@ futures-util = "0.3"
 home = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
+serde_yml = "0.0.12"
 tauri-winres = "0.1"
 thiserror = "2"
 regex = "1"
@@ -18,9 +25,26 @@ tokio-tungstenite = "0.26"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+
+# Internal workspace crates
 wm-macros = { path = "packages/wm-macros" }
+wm-common = { path = "packages/wm-common" }
+wm-platform = { path = "packages/wm-platform" }
+wm-ipc-client = { path = "packages/wm-ipc-client" }
+wm-cli = { path = "packages/wm-cli" }
 
 [workspace.lints]
 clippy.all = { level = "warn", priority = -1 }
 clippy.pedantic = { level = "warn", priority = -1 }
 clippy.missing_errors_doc = "allow"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[profile.dev]
+opt-level = 0
+debug = 1

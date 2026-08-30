@@ -19,7 +19,7 @@ pub fn flatten_split_container(
 
   let updated_children =
     split_container.children().into_iter().inspect(|child| {
-      *child.borrow_parent_mut() = Some(parent.clone());
+      child.set_parent(Some(&parent));
 
       // Resize tiling children to fit the size of the split container.
       if let Ok(tiling_child) = child.as_tiling_container() {
@@ -59,7 +59,7 @@ pub fn flatten_split_container(
     .borrow_child_focus_order_mut()
     .retain(|id| *id != split_container.id());
 
-  *split_container.borrow_parent_mut() = None;
+  split_container.set_parent(None);
   *split_container.borrow_children_mut() = VecDeque::new();
 
   Ok(())

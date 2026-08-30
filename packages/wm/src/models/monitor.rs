@@ -1,8 +1,4 @@
-use std::{
-  cell::{Ref, RefCell, RefMut},
-  collections::VecDeque,
-  rc::Rc,
-};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use anyhow::Context;
 use uuid::Uuid;
@@ -12,22 +8,21 @@ use wm_platform::{Display, Rect};
 use crate::{
   impl_common_getters, impl_container_debug,
   models::{
-    Container, DirectionContainer, NativeMonitorProperties,
-    TilingContainer, WindowContainer, Workspace,
+    Container, NativeMonitorProperties, WeakContainer, Workspace,
   },
   traits::{CommonGetters, PositionGetters},
 };
 
 #[derive(Clone)]
-pub struct Monitor(Rc<RefCell<MonitorInner>>);
+pub struct Monitor(pub(crate) Rc<RefCell<MonitorInner>>);
 
-struct MonitorInner {
-  id: Uuid,
-  parent: Option<Container>,
-  children: VecDeque<Container>,
-  child_focus_order: VecDeque<Uuid>,
-  native: Display,
-  native_properties: NativeMonitorProperties,
+pub(crate) struct MonitorInner {
+  pub(crate) id: Uuid,
+  pub(crate) parent: Option<WeakContainer>,
+  pub(crate) children: VecDeque<Container>,
+  pub(crate) child_focus_order: VecDeque<Uuid>,
+  pub(crate) native: Display,
+  pub(crate) native_properties: NativeMonitorProperties,
 }
 
 impl Monitor {

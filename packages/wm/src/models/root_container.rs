@@ -1,8 +1,4 @@
-use std::{
-  cell::{Ref, RefCell, RefMut},
-  collections::VecDeque,
-  rc::Rc,
-};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use anyhow::bail;
 use uuid::Uuid;
@@ -11,22 +7,19 @@ use wm_platform::Rect;
 
 use crate::{
   impl_common_getters, impl_container_debug,
-  models::{
-    Container, DirectionContainer, Monitor, TilingContainer,
-    WindowContainer,
-  },
+  models::{Container, Monitor, WeakContainer},
   traits::{CommonGetters, PositionGetters},
 };
 
 /// Root node of the container tree.
 #[derive(Clone)]
-pub struct RootContainer(Rc<RefCell<RootContainerInner>>);
+pub struct RootContainer(pub(crate) Rc<RefCell<RootContainerInner>>);
 
-struct RootContainerInner {
-  id: Uuid,
-  parent: Option<Container>,
-  children: VecDeque<Container>,
-  child_focus_order: VecDeque<Uuid>,
+pub(crate) struct RootContainerInner {
+  pub(crate) id: Uuid,
+  pub(crate) parent: Option<WeakContainer>,
+  pub(crate) children: VecDeque<Container>,
+  pub(crate) child_focus_order: VecDeque<Uuid>,
 }
 
 impl Default for RootContainer {

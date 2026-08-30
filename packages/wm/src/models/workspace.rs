@@ -1,8 +1,4 @@
-use std::{
-  cell::{Ref, RefCell, RefMut},
-  collections::VecDeque,
-  rc::Rc,
-};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use anyhow::Context;
 use uuid::Uuid;
@@ -14,25 +10,23 @@ use wm_platform::{Rect, RectDelta};
 use crate::{
   impl_common_getters, impl_container_debug,
   impl_tiling_direction_getters,
-  models::{
-    Container, DirectionContainer, TilingContainer, WindowContainer,
-  },
+  models::{Container, WeakContainer},
   traits::{CommonGetters, PositionGetters, TilingDirectionGetters},
 };
 
 #[derive(Clone)]
-pub struct Workspace(Rc<RefCell<WorkspaceInner>>);
+pub struct Workspace(pub(crate) Rc<RefCell<WorkspaceInner>>);
 
 #[derive(Debug)]
-struct WorkspaceInner {
-  id: Uuid,
-  parent: Option<Container>,
-  children: VecDeque<Container>,
-  child_focus_order: VecDeque<Uuid>,
-  config: WorkspaceConfig,
-  gaps_config: GapsConfig,
-  tiling_direction: TilingDirection,
-  offset_x: f64,
+pub(crate) struct WorkspaceInner {
+  pub(crate) id: Uuid,
+  pub(crate) parent: Option<WeakContainer>,
+  pub(crate) children: VecDeque<Container>,
+  pub(crate) child_focus_order: VecDeque<Uuid>,
+  pub(crate) config: WorkspaceConfig,
+  pub(crate) gaps_config: GapsConfig,
+  pub(crate) tiling_direction: TilingDirection,
+  pub(crate) offset_x: f64,
 }
 
 impl Workspace {

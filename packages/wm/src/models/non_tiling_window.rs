@@ -1,6 +1,5 @@
 use std::{
-  cell::{Ref, RefCell, RefMut},
-  collections::VecDeque,
+  cell::{Ref, RefCell},
   rc::Rc,
 };
 
@@ -13,35 +12,31 @@ use wm_common::{
 use wm_platform::{NativeWindow, Rect, RectDelta};
 
 use crate::{
-  impl_common_getters, impl_container_debug, impl_window_getters,
+  impl_container_debug, impl_leaf_common_getters, impl_window_getters,
   models::{
-    Container, DirectionContainer, InsertionTarget,
-    NativeWindowProperties, TilingContainer, TilingWindow,
-    WindowContainer,
+    InsertionTarget, NativeWindowProperties, TilingWindow, WeakContainer,
   },
   traits::{CommonGetters, PositionGetters, WindowGetters},
 };
 
 #[derive(Clone)]
-pub struct NonTilingWindow(Rc<RefCell<NonTilingWindowInner>>);
+pub struct NonTilingWindow(pub(crate) Rc<RefCell<NonTilingWindowInner>>);
 
-struct NonTilingWindowInner {
-  id: Uuid,
-  parent: Option<Container>,
-  children: VecDeque<Container>,
-  child_focus_order: VecDeque<Uuid>,
-  native: NativeWindow,
-  native_properties: NativeWindowProperties,
-  state: WindowState,
-  prev_state: Option<WindowState>,
-  insertion_target: Option<InsertionTarget>,
-  display_state: DisplayState,
-  border_delta: RectDelta,
-  has_pending_dpi_adjustment: bool,
-  floating_placement: Rect,
-  has_custom_floating_placement: bool,
-  done_window_rules: Vec<WindowRuleConfig>,
-  active_drag: Option<ActiveDrag>,
+pub(crate) struct NonTilingWindowInner {
+  pub(crate) id: Uuid,
+  pub(crate) parent: Option<WeakContainer>,
+  pub(crate) native: NativeWindow,
+  pub(crate) native_properties: NativeWindowProperties,
+  pub(crate) state: WindowState,
+  pub(crate) prev_state: Option<WindowState>,
+  pub(crate) insertion_target: Option<InsertionTarget>,
+  pub(crate) display_state: DisplayState,
+  pub(crate) border_delta: RectDelta,
+  pub(crate) has_pending_dpi_adjustment: bool,
+  pub(crate) floating_placement: Rect,
+  pub(crate) has_custom_floating_placement: bool,
+  pub(crate) done_window_rules: Vec<WindowRuleConfig>,
+  pub(crate) active_drag: Option<ActiveDrag>,
 }
 
 impl NonTilingWindow {
@@ -62,8 +57,6 @@ impl NonTilingWindow {
     let window = NonTilingWindowInner {
       id: id.unwrap_or_else(Uuid::new_v4),
       parent: None,
-      children: VecDeque::new(),
-      child_focus_order: VecDeque::new(),
       native,
       native_properties: properties,
       state,
@@ -142,7 +135,7 @@ impl NonTilingWindow {
 }
 
 impl_container_debug!(NonTilingWindow);
-impl_common_getters!(NonTilingWindow);
+impl_leaf_common_getters!(NonTilingWindow);
 impl_window_getters!(NonTilingWindow);
 
 impl PositionGetters for NonTilingWindow {

@@ -27,9 +27,11 @@ pub trait CommonGetters {
 
   fn to_dto(&self) -> anyhow::Result<ContainerDto>;
 
-  fn borrow_parent(&self) -> Ref<'_, Option<Container>>;
+  /// Gets the parent container, unless this container is the root or detached.
+  fn parent(&self) -> Option<Container>;
 
-  fn borrow_parent_mut(&self) -> RefMut<'_, Option<Container>>;
+  /// Sets the parent container. Pass `None` to detach.
+  fn set_parent(&self, parent: Option<&Container>);
 
   fn borrow_children(&self) -> Ref<'_, VecDeque<Container>>;
 
@@ -38,11 +40,6 @@ pub trait CommonGetters {
   fn borrow_child_focus_order(&self) -> Ref<'_, VecDeque<Uuid>>;
 
   fn borrow_child_focus_order_mut(&self) -> RefMut<'_, VecDeque<Uuid>>;
-
-  /// Gets the parent container, unless this container is the root.
-  fn parent(&self) -> Option<Container> {
-    self.borrow_parent().clone()
-  }
 
   /// Direct children of this container.
   fn children(&self) -> VecDeque<Container> {
@@ -62,7 +59,7 @@ pub trait CommonGetters {
   /// Whether this container is detached from the tree (i.e. it does not
   /// have a parent).
   fn is_detached(&self) -> bool {
-    self.borrow_parent().as_ref().is_none()
+    self.parent().is_none()
   }
 
   /// Index of this container amongst its siblings.
@@ -70,8 +67,7 @@ pub trait CommonGetters {
   /// Returns 0 if the container has no parent.
   fn index(&self) -> usize {
     self
-      .borrow_parent()
-      .as_ref()
+      .parent()
       .and_then(|parent| {
         parent
           .borrow_children()
@@ -90,15 +86,14 @@ pub trait CommonGetters {
       .cloned()
   }
 
-  fn tiling_children(
-    &self,
-  ) -> Box<dyn Iterator<Item = TilingContainer> + '_> {
-    Box::new(
-      self
-        .children()
-        .into_iter()
-        .filter_map(|container| container.try_into().ok()),
-    )
+  fn child_focus_order_ids(&self) -> Vec<Uuid> {
+    self.borrow_child_focus_order().iter().copied().collect()
+  }
+
+  fn tiling_children(&self) -> TilingChildren {
+    TilingChildren {
+      iter: self.children().into_iter(),
+    }
   }
 
   fn descendants(&self) -> Descendants {
@@ -114,98 +109,77 @@ pub trait CommonGetters {
   }
 
   /// Children in order of last focus.
-  fn child_focus_order(&self) -> Box<dyn Iterator<Item = Container> + '_> {
-    let child_focus_order = self.borrow_child_focus_order();
-
-    Box::new(std::iter::from_fn(move || {
-      for child_id in child_focus_order.iter() {
-        if let Some(child) = self.child_by_id(child_id) {
-          return Some(child);
-        }
-      }
-
-      None
-    }))
+  fn child_focus_order(&self) -> ChildFocusOrder {
+    ChildFocusOrder {
+      container: self.as_container(),
+      ids: self.child_focus_order_ids(),
+      index: 0,
+    }
   }
 
   /// Leaf nodes (i.e. windows and workspaces) in order of last focus.
-  fn descendant_focus_order(
-    &self,
-  ) -> Box<dyn Iterator<Item = Container> + '_> {
-    let mut stack = Vec::new();
-    stack.push(self.as_container());
-
-    Box::new(std::iter::from_fn(move || {
-      while let Some(current) = stack.pop() {
-        // Get containers that have no children. Descendant also cannot be
-        // the container itself.
-        if current.id() != self.id() && !current.has_children() {
-          return Some(current);
-        }
-
-        // Reverse the child focus order so that the first element is
-        // pushed last and popped first.
-        for focus_child_id in
-          current.borrow_child_focus_order().iter().rev()
-        {
-          if let Some(focus_child) = current.child_by_id(focus_child_id) {
-            stack.push(focus_child);
-          }
-        }
-      }
-
-      None
-    }))
+  fn descendant_focus_order(&self) -> DescendantFocusOrder {
+    DescendantFocusOrder {
+      root_id: self.id(),
+      stack: vec![self.as_container()],
+    }
   }
 
-  fn siblings(&self) -> Box<dyn Iterator<Item = Container> + '_> {
-    Box::new(
-      self
+  fn siblings(&self) -> Siblings {
+    Siblings {
+      id: self.id(),
+      iter: self
         .parent()
-        .into_iter()
-        .flat_map(|parent| parent.children())
-        .filter(move |sibling| sibling.id() != self.id()),
-    )
+        .map_or_else(VecDeque::new, |parent| parent.children())
+        .into_iter(),
+    }
   }
 
-  fn self_and_siblings(&self) -> Box<dyn Iterator<Item = Container> + '_> {
-    Box::new(
-      self
+  fn self_and_siblings(&self) -> SelfAndSiblings {
+    SelfAndSiblings {
+      iter: self
         .parent()
-        .into_iter()
-        .flat_map(|parent| parent.children()),
-    )
+        .map_or_else(VecDeque::new, |parent| parent.children())
+        .into_iter(),
+    }
   }
 
-  fn prev_siblings(&self) -> Box<dyn Iterator<Item = Container> + '_> {
-    Box::new(
-      self
-        .self_and_siblings()
-        .collect::<Vec<_>>()
-        .into_iter()
-        .take(self.index())
-        .rev(),
-    )
+  fn prev_siblings(&self) -> PrevSiblings {
+    let index = self.index();
+    let prev = self
+      .self_and_siblings()
+      .take(index)
+      .collect::<Vec<_>>()
+      .into_iter()
+      .rev()
+      .collect::<Vec<_>>();
+    PrevSiblings {
+      iter: prev.into_iter(),
+    }
   }
 
-  fn next_siblings(&self) -> Box<dyn Iterator<Item = Container> + '_> {
-    Box::new(
-      self
-        .self_and_siblings()
-        .collect::<Vec<_>>()
-        .into_iter()
-        .skip(self.index() + 1),
-    )
+  fn next_siblings(&self) -> NextSiblings {
+    let index = self.index();
+    let mut iter = self
+      .parent()
+      .map_or_else(VecDeque::new, |parent| parent.children())
+      .into_iter();
+    if index < iter.len() {
+      iter.nth(index);
+    } else {
+      iter = VecDeque::new().into_iter();
+    }
+    NextSiblings { iter }
   }
 
-  fn tiling_siblings(
-    &self,
-  ) -> Box<dyn Iterator<Item = TilingContainer> + '_> {
-    Box::new(
-      self
-        .siblings()
-        .filter_map(|container| container.try_into().ok()),
-    )
+  fn tiling_siblings(&self) -> TilingSiblings {
+    TilingSiblings {
+      id: self.id(),
+      iter: self
+        .parent()
+        .map_or_else(VecDeque::new, |parent| parent.children())
+        .into_iter(),
+    }
   }
 
   fn ancestors(&self) -> Ancestors {
@@ -308,69 +282,360 @@ impl Iterator for Descendants {
   }
 }
 
-/// Implements the `CommonGetters` trait for a given struct.
-///
-/// Expects that the struct has a wrapping `RefCell` containing a struct
-/// with an `id`, `parent`, `children`, and `child_focus_order` field.
+/// An iterator over tiling children of a given container.
+pub struct TilingChildren {
+  iter: std::collections::vec_deque::IntoIter<Container>,
+}
+
+impl Iterator for TilingChildren {
+  type Item = TilingContainer;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    self.iter.find_map(|c| c.try_into().ok())
+  }
+}
+
+/// An iterator over siblings of a given container.
+pub struct Siblings {
+  id: Uuid,
+  iter: std::collections::vec_deque::IntoIter<Container>,
+}
+
+impl Iterator for Siblings {
+  type Item = Container;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    self.iter.find(|c| c.id() != self.id)
+  }
+}
+
+/// An iterator over a container and its siblings.
+pub struct SelfAndSiblings {
+  iter: std::collections::vec_deque::IntoIter<Container>,
+}
+
+impl Iterator for SelfAndSiblings {
+  type Item = Container;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    self.iter.next()
+  }
+}
+
+/// An iterator over previous siblings.
+pub struct PrevSiblings {
+  iter: std::vec::IntoIter<Container>,
+}
+
+impl Iterator for PrevSiblings {
+  type Item = Container;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    self.iter.next()
+  }
+}
+
+/// An iterator over next siblings.
+pub struct NextSiblings {
+  iter: std::collections::vec_deque::IntoIter<Container>,
+}
+
+impl Iterator for NextSiblings {
+  type Item = Container;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    self.iter.next()
+  }
+}
+
+/// An iterator over tiling siblings.
+pub struct TilingSiblings {
+  id: Uuid,
+  iter: std::collections::vec_deque::IntoIter<Container>,
+}
+
+impl Iterator for TilingSiblings {
+  type Item = TilingContainer;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    for c in self.iter.by_ref() {
+      if c.id() != self.id {
+        if let Ok(tiling) = c.try_into() {
+          return Some(tiling);
+        }
+      }
+    }
+    None
+  }
+}
+
+/// An iterator over children in focus order.
+pub struct ChildFocusOrder {
+  container: Container,
+  ids: Vec<Uuid>,
+  index: usize,
+}
+
+impl Iterator for ChildFocusOrder {
+  type Item = Container;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    while self.index < self.ids.len() {
+      let id = self.ids[self.index];
+      self.index += 1;
+      if let Some(child) = self.container.child_by_id(&id) {
+        return Some(child);
+      }
+    }
+    None
+  }
+}
+
+/// An iterator over descendants in focus order.
+pub struct DescendantFocusOrder {
+  root_id: Uuid,
+  stack: Vec<Container>,
+}
+
+impl Iterator for DescendantFocusOrder {
+  type Item = Container;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    while let Some(current) = self.stack.pop() {
+      if current.id() != self.root_id && !current.has_children() {
+        return Some(current);
+      }
+
+      let focus_ids = current.child_focus_order_ids();
+      for focus_child_id in focus_ids.into_iter().rev() {
+        if let Some(focus_child) = current.child_by_id(&focus_child_id) {
+          self.stack.push(focus_child);
+        }
+      }
+    }
+    None
+  }
+}
+
+/// Implements the `CommonGetters` trait for a branch container struct.
 #[macro_export]
 macro_rules! impl_common_getters {
   ($struct_name:ident) => {
     impl CommonGetters for $struct_name {
-      fn id(&self) -> Uuid {
+      fn id(&self) -> ::uuid::Uuid {
         self.0.borrow().id
       }
 
-      fn as_container(&self) -> Container {
+      fn as_container(&self) -> $crate::models::Container {
         self.clone().into()
       }
 
-      fn as_tiling_container(&self) -> anyhow::Result<TilingContainer> {
-        TryInto::<TilingContainer>::try_into(self.as_container())
-          .map_err(anyhow::Error::msg)
+      fn as_tiling_container(
+        &self,
+      ) -> anyhow::Result<$crate::models::TilingContainer> {
+        TryInto::<$crate::models::TilingContainer>::try_into(
+          self.as_container(),
+        )
+        .map_err(anyhow::Error::msg)
       }
 
-      fn as_window_container(&self) -> anyhow::Result<WindowContainer> {
-        TryInto::<WindowContainer>::try_into(self.as_container())
-          .map_err(anyhow::Error::msg)
+      fn as_window_container(
+        &self,
+      ) -> anyhow::Result<$crate::models::WindowContainer> {
+        TryInto::<$crate::models::WindowContainer>::try_into(
+          self.as_container(),
+        )
+        .map_err(anyhow::Error::msg)
       }
 
       fn as_direction_container(
         &self,
-      ) -> anyhow::Result<DirectionContainer> {
-        TryInto::<DirectionContainer>::try_into(self.as_container())
-          .map_err(anyhow::Error::msg)
+      ) -> anyhow::Result<$crate::models::DirectionContainer> {
+        TryInto::<$crate::models::DirectionContainer>::try_into(
+          self.as_container(),
+        )
+        .map_err(anyhow::Error::msg)
       }
 
-      fn to_dto(&self) -> anyhow::Result<ContainerDto> {
+      fn to_dto(&self) -> anyhow::Result<::wm_common::ContainerDto> {
         self.to_dto()
       }
 
-      fn borrow_parent(&self) -> Ref<'_, Option<Container>> {
-        Ref::map(self.0.borrow(), |inner| &inner.parent)
+      fn parent(&self) -> Option<$crate::models::Container> {
+        self
+          .0
+          .borrow()
+          .parent
+          .as_ref()
+          .and_then($crate::models::WeakContainer::upgrade)
       }
 
-      fn borrow_parent_mut(&self) -> RefMut<'_, Option<Container>> {
-        RefMut::map(self.0.borrow_mut(), |inner| &mut inner.parent)
+      fn set_parent(&self, parent: Option<&$crate::models::Container>) {
+        self.0.borrow_mut().parent =
+          parent.map($crate::models::WeakContainer::from_container);
       }
 
-      fn borrow_children(&self) -> Ref<'_, VecDeque<Container>> {
-        Ref::map(self.0.borrow(), |inner| &inner.children)
+      fn children(&self) -> ::std::collections::VecDeque<$crate::models::Container> {
+        self.0.borrow().children.clone()
       }
 
-      fn borrow_children_mut(&self) -> RefMut<'_, VecDeque<Container>> {
-        RefMut::map(self.0.borrow_mut(), |inner| &mut inner.children)
+      fn child_count(&self) -> usize {
+        self.0.borrow().children.len()
       }
 
-      fn borrow_child_focus_order(&self) -> Ref<'_, VecDeque<Uuid>> {
-        Ref::map(self.0.borrow(), |inner| &inner.child_focus_order)
+      fn has_children(&self) -> bool {
+        !self.0.borrow().children.is_empty()
+      }
+
+      fn child_by_id(
+        &self,
+        child_id: &::uuid::Uuid,
+      ) -> Option<$crate::models::Container> {
+        self
+          .0
+          .borrow()
+          .children
+          .iter()
+          .find(|child| &child.id() == child_id)
+          .cloned()
+      }
+
+      fn child_focus_order_ids(&self) -> ::std::vec::Vec<::uuid::Uuid> {
+        self.0.borrow().child_focus_order.iter().copied().collect()
+      }
+
+      fn borrow_children(
+        &self,
+      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<$crate::models::Container>> {
+        ::std::cell::Ref::map(self.0.borrow(), |inner| &inner.children)
+      }
+
+      fn borrow_children_mut(
+        &self,
+      ) -> ::std::cell::RefMut<'_, ::std::collections::VecDeque<$crate::models::Container>> {
+        ::std::cell::RefMut::map(self.0.borrow_mut(), |inner| &mut inner.children)
+      }
+
+      fn borrow_child_focus_order(
+        &self,
+      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<::uuid::Uuid>> {
+        ::std::cell::Ref::map(self.0.borrow(), |inner| &inner.child_focus_order)
       }
 
       fn borrow_child_focus_order_mut(
         &self,
-      ) -> RefMut<'_, VecDeque<Uuid>> {
-        RefMut::map(self.0.borrow_mut(), |inner| {
+      ) -> ::std::cell::RefMut<'_, ::std::collections::VecDeque<::uuid::Uuid>> {
+        ::std::cell::RefMut::map(self.0.borrow_mut(), |inner| {
           &mut inner.child_focus_order
         })
+      }
+    }
+  };
+}
+
+/// Implements the `CommonGetters` trait for a leaf window struct (no children fields).
+#[macro_export]
+macro_rules! impl_leaf_common_getters {
+  ($struct_name:ident) => {
+    impl CommonGetters for $struct_name {
+      fn id(&self) -> ::uuid::Uuid {
+        self.0.borrow().id
+      }
+
+      fn as_container(&self) -> $crate::models::Container {
+        self.clone().into()
+      }
+
+      fn as_tiling_container(
+        &self,
+      ) -> anyhow::Result<$crate::models::TilingContainer> {
+        TryInto::<$crate::models::TilingContainer>::try_into(
+          self.as_container(),
+        )
+        .map_err(anyhow::Error::msg)
+      }
+
+      fn as_window_container(
+        &self,
+      ) -> anyhow::Result<$crate::models::WindowContainer> {
+        TryInto::<$crate::models::WindowContainer>::try_into(
+          self.as_container(),
+        )
+        .map_err(anyhow::Error::msg)
+      }
+
+      fn as_direction_container(
+        &self,
+      ) -> anyhow::Result<$crate::models::DirectionContainer> {
+        TryInto::<$crate::models::DirectionContainer>::try_into(
+          self.as_container(),
+        )
+        .map_err(anyhow::Error::msg)
+      }
+
+      fn to_dto(&self) -> anyhow::Result<::wm_common::ContainerDto> {
+        self.to_dto()
+      }
+
+      fn parent(&self) -> Option<$crate::models::Container> {
+        self
+          .0
+          .borrow()
+          .parent
+          .as_ref()
+          .and_then($crate::models::WeakContainer::upgrade)
+      }
+
+      fn set_parent(&self, parent: Option<&$crate::models::Container>) {
+        self.0.borrow_mut().parent =
+          parent.map($crate::models::WeakContainer::from_container);
+      }
+
+      fn children(&self) -> ::std::collections::VecDeque<$crate::models::Container> {
+        ::std::collections::VecDeque::new()
+      }
+
+      fn child_count(&self) -> usize {
+        0
+      }
+
+      fn has_children(&self) -> bool {
+        false
+      }
+
+      fn child_by_id(
+        &self,
+        _child_id: &::uuid::Uuid,
+      ) -> Option<$crate::models::Container> {
+        None
+      }
+
+      fn child_focus_order_ids(&self) -> ::std::vec::Vec<::uuid::Uuid> {
+        ::std::vec::Vec::new()
+      }
+
+      fn borrow_children(
+        &self,
+      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<$crate::models::Container>> {
+        panic!("Cannot borrow children of a leaf window");
+      }
+
+      fn borrow_children_mut(
+        &self,
+      ) -> ::std::cell::RefMut<'_, ::std::collections::VecDeque<$crate::models::Container>> {
+        panic!("Cannot borrow children mutably for a leaf container");
+      }
+
+      fn borrow_child_focus_order(
+        &self,
+      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<::uuid::Uuid>> {
+        panic!("Cannot borrow child focus order of a leaf window");
+      }
+
+      fn borrow_child_focus_order_mut(
+        &self,
+      ) -> ::std::cell::RefMut<'_, ::std::collections::VecDeque<::uuid::Uuid>> {
+        panic!("Cannot borrow child focus order mutably for a leaf container");
       }
     }
   };

@@ -1,6 +1,5 @@
 use std::{
-  cell::{Ref, RefCell, RefMut},
-  collections::VecDeque,
+  cell::{Ref, RefCell},
   rc::Rc,
 };
 
@@ -13,13 +12,11 @@ use wm_common::{
 use wm_platform::{NativeWindow, Rect, RectDelta};
 
 use crate::{
-  impl_common_getters, impl_container_debug,
+  impl_container_debug, impl_leaf_common_getters,
   impl_position_getters_as_resizable, impl_tiling_size_getters,
   impl_window_getters,
   models::{
-    Container, DirectionContainer, InsertionTarget,
-    NativeWindowProperties, NonTilingWindow, TilingContainer,
-    WindowContainer,
+    InsertionTarget, NativeWindowProperties, NonTilingWindow, WeakContainer,
   },
   traits::{
     CommonGetters, PositionGetters, TilingDirectionGetters,
@@ -28,26 +25,24 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct TilingWindow(Rc<RefCell<TilingWindowInner>>);
+pub struct TilingWindow(pub(crate) Rc<RefCell<TilingWindowInner>>);
 
-struct TilingWindowInner {
-  id: Uuid,
-  parent: Option<Container>,
-  children: VecDeque<Container>,
-  child_focus_order: VecDeque<Uuid>,
-  tiling_size: f32,
-  native: NativeWindow,
-  native_properties: NativeWindowProperties,
-  state: WindowState,
-  prev_state: Option<WindowState>,
-  display_state: DisplayState,
-  border_delta: RectDelta,
-  has_pending_dpi_adjustment: bool,
-  floating_placement: Rect,
-  has_custom_floating_placement: bool,
-  gaps_config: GapsConfig,
-  done_window_rules: Vec<WindowRuleConfig>,
-  active_drag: Option<ActiveDrag>,
+pub(crate) struct TilingWindowInner {
+  pub(crate) id: Uuid,
+  pub(crate) parent: Option<WeakContainer>,
+  pub(crate) tiling_size: f32,
+  pub(crate) native: NativeWindow,
+  pub(crate) native_properties: NativeWindowProperties,
+  pub(crate) state: WindowState,
+  pub(crate) prev_state: Option<WindowState>,
+  pub(crate) display_state: DisplayState,
+  pub(crate) border_delta: RectDelta,
+  pub(crate) has_pending_dpi_adjustment: bool,
+  pub(crate) floating_placement: Rect,
+  pub(crate) has_custom_floating_placement: bool,
+  pub(crate) gaps_config: GapsConfig,
+  pub(crate) done_window_rules: Vec<WindowRuleConfig>,
+  pub(crate) active_drag: Option<ActiveDrag>,
 }
 
 impl TilingWindow {
@@ -67,8 +62,6 @@ impl TilingWindow {
     let window = TilingWindowInner {
       id: id.unwrap_or_else(Uuid::new_v4),
       parent: None,
-      children: VecDeque::new(),
-      child_focus_order: VecDeque::new(),
       tiling_size: 1.0,
       native,
       native_properties: properties,
@@ -136,7 +129,7 @@ impl TilingWindow {
 }
 
 impl_container_debug!(TilingWindow);
-impl_common_getters!(TilingWindow);
+impl_leaf_common_getters!(TilingWindow);
 impl_tiling_size_getters!(TilingWindow);
 impl_position_getters_as_resizable!(TilingWindow);
 impl_window_getters!(TilingWindow);

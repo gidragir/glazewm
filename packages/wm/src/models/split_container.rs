@@ -1,5 +1,5 @@
 use std::{
-  cell::{Ref, RefCell, RefMut},
+  cell::{Ref, RefCell},
   collections::VecDeque,
   rc::Rc,
 };
@@ -15,9 +15,7 @@ use crate::{
   impl_common_getters, impl_container_debug,
   impl_position_getters_as_resizable, impl_tiling_direction_getters,
   impl_tiling_size_getters,
-  models::{
-    Container, DirectionContainer, TilingContainer, WindowContainer,
-  },
+  models::{Container, WeakContainer},
   traits::{
     CommonGetters, PositionGetters, TilingDirectionGetters,
     TilingSizeGetters,
@@ -25,16 +23,16 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct SplitContainer(Rc<RefCell<SplitContainerInner>>);
+pub struct SplitContainer(pub(crate) Rc<RefCell<SplitContainerInner>>);
 
-struct SplitContainerInner {
-  id: Uuid,
-  parent: Option<Container>,
-  children: VecDeque<Container>,
-  child_focus_order: VecDeque<Uuid>,
-  tiling_size: f32,
-  tiling_direction: TilingDirection,
-  gaps_config: GapsConfig,
+pub(crate) struct SplitContainerInner {
+  pub(crate) id: Uuid,
+  pub(crate) parent: Option<WeakContainer>,
+  pub(crate) children: VecDeque<Container>,
+  pub(crate) child_focus_order: VecDeque<Uuid>,
+  pub(crate) tiling_size: f32,
+  pub(crate) tiling_direction: TilingDirection,
+  pub(crate) gaps_config: GapsConfig,
 }
 
 impl SplitContainer {

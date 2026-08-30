@@ -33,7 +33,7 @@ pub fn detach_container(child_to_remove: Container) -> anyhow::Result<()> {
     .borrow_child_focus_order_mut()
     .retain(|id| *id != child_to_remove.id());
 
-  *child_to_remove.borrow_parent_mut() = None;
+  child_to_remove.set_parent(None);
 
   // Resize the siblings if it is a tiling container.
   if let Ok(child_to_remove) = child_to_remove.as_tiling_container() {

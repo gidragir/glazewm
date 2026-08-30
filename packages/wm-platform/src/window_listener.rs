@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::{platform_impl, Dispatcher, WindowEvent};
+use crate::{Dispatcher, WindowEvent, platform_impl};
 
 /// A listener for system-wide window events.
 pub struct WindowListener {

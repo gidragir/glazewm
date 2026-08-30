@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::{platform_impl, Dispatcher};
+use crate::{Dispatcher, platform_impl};
 
 /// A listener for system-wide display setting changes.
 ///

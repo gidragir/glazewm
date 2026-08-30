@@ -1,6 +1,6 @@
 use anyhow::Context;
 use wm_common::{
-  try_warn, FullscreenStateConfig, TilingDirection, WindowState,
+  FullscreenStateConfig, TilingDirection, WindowState, try_warn,
 };
 use wm_platform::{LengthValue, Point, Rect};
 

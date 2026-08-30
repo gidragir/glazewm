@@ -3,7 +3,7 @@ use anyhow::Context;
 use super::flatten_split_container;
 use crate::{
   models::Container,
-  traits::{CommonGetters, TilingSizeGetters, MIN_TILING_SIZE},
+  traits::{CommonGetters, MIN_TILING_SIZE, TilingSizeGetters},
 };
 
 /// Removes a container from the tree.
@@ -17,10 +17,9 @@ pub fn detach_container(child_to_remove: Container) -> anyhow::Result<()> {
   if let Some(split_parent) = child_to_remove
     .parent()
     .and_then(|parent| parent.as_split().cloned())
+    && split_parent.child_count() == 1
   {
-    if split_parent.child_count() == 1 {
-      flatten_split_container(split_parent)?;
-    }
+    flatten_split_container(split_parent)?;
   }
 
   let parent = child_to_remove.parent().context("No parent.")?;
@@ -37,9 +36,9 @@ pub fn detach_container(child_to_remove: Container) -> anyhow::Result<()> {
 
   // Resize the siblings if it is a tiling container.
   if let Ok(child_to_remove) = child_to_remove.as_tiling_container() {
-    // Sibling sizes are only redistributed within a bounded split container.
-    // For top-level columns on a horizontal workspace (infinite canvas),
-    // columns retain their independent widths.
+    // Sibling sizes are only redistributed within a bounded split
+    // container. For top-level columns on a horizontal workspace
+    // (infinite canvas), columns retain their independent widths.
     if parent.as_workspace().is_none() {
       let tiling_siblings = parent.tiling_children().collect::<Vec<_>>();
 

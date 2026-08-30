@@ -1,6 +1,6 @@
 use objc2::{
-  define_class, msg_send, rc::Retained, runtime::AnyObject, sel,
-  AnyThread, DefinedClass,
+  AnyThread, DefinedClass, define_class, msg_send, rc::Retained,
+  runtime::AnyObject, sel,
 };
 use objc2_app_kit::{
   NSApplicationDidChangeScreenParametersNotification,
@@ -14,8 +14,8 @@ use objc2_app_kit::{
   NSWorkspaceDidWakeNotification, NSWorkspaceWillSleepNotification,
 };
 use objc2_foundation::{
-  ns_string, NSNotification, NSNotificationCenter, NSNotificationName,
-  NSObject, NSString,
+  NSNotification, NSNotificationCenter, NSNotificationName, NSObject,
+  NSString, ns_string,
 };
 use tokio::sync::mpsc;
 
@@ -142,8 +142,8 @@ define_class! {
 }
 
 impl NotificationObserver {
-  pub fn new(
-  ) -> (Retained<Self>, mpsc::UnboundedReceiver<NotificationEvent>) {
+  pub fn new()
+  -> (Retained<Self>, mpsc::UnboundedReceiver<NotificationEvent>) {
     let (events_tx, events_rx) = mpsc::unbounded_channel();
 
     let instance = Self::alloc()

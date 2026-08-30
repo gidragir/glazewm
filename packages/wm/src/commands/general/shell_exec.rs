@@ -130,11 +130,11 @@ fn parse_command(
 
   // The first part is the program name if it doesn't contain a slash or
   // backslash.
-  if let Some(first_part) = command_parts.first() {
-    if !first_part.contains(&['/', '\\'][..]) {
-      let args = command_parts[1..].join(" ");
-      return Ok(((*first_part).to_string(), args));
-    }
+  if let Some(first_part) = command_parts.first()
+    && !first_part.contains(&['/', '\\'][..])
+  {
+    let args = command_parts[1..].join(" ");
+    return Ok(((*first_part).to_string(), args));
   }
 
   let mut cumulative_path = Vec::new();

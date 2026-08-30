@@ -1,13 +1,14 @@
 use std::sync::{
+  Arc,
   atomic::{AtomicBool, Ordering},
-  mpsc, Arc,
+  mpsc,
 };
 
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_core_foundation::{
-  kCFRunLoopDefaultMode, CFRetained, CFRunLoop, CFRunLoopSource,
-  CFRunLoopSourceContext,
+  CFRetained, CFRunLoop, CFRunLoopSource, CFRunLoopSourceContext,
+  kCFRunLoopDefaultMode,
 };
 
 use crate::{DispatchFn, Dispatcher};

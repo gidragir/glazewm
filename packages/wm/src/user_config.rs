@@ -230,7 +230,7 @@ impl UserConfig {
     let window_class = window.native_properties().class_name;
     let window_process = window.native_properties().process_name;
 
-    let pending_window_rules = self
+    self
       .window_rules_by_event
       .get(event)
       .unwrap_or(&Vec::new())
@@ -280,9 +280,7 @@ impl UserConfig {
         })
       })
       .cloned()
-      .collect::<Vec<_>>();
-
-    pending_window_rules
+      .collect::<Vec<_>>()
   }
 
   pub fn inactive_workspace_configs(

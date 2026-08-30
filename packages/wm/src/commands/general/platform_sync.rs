@@ -226,24 +226,19 @@ fn redraw_containers(
       }
       if matches!(window.state(), WindowState::Tiling)
         && window.active_drag().is_none()
+        && let Ok(rect) = window.to_rect()
+        && let Ok(delta) = window.total_border_delta()
       {
-        if let Ok(rect) = window.to_rect() {
-          if let Ok(delta) = window.total_border_delta() {
-            batch_positions.push((
-              window.native().clone(),
-              rect.apply_delta(&delta, None),
-            ));
-          }
-        }
+        batch_positions
+          .push((window.native().clone(), rect.apply_delta(&delta, None)));
       }
     }
 
-    if !batch_positions.is_empty() {
-      if let Err(err) =
+    if !batch_positions.is_empty()
+      && let Err(err) =
         wm_platform::apply_window_positions(&batch_positions)
-      {
-        tracing::warn!("Failed to batch apply window positions: {}", err);
-      }
+    {
+      tracing::warn!("Failed to batch apply window positions: {}", err);
     }
   }
 
@@ -343,13 +338,13 @@ fn redraw_containers(
           _ => false,
         };
 
-      if is_transitioning_fullscreen {
-        if let Err(err) = window.native().mark_fullscreen(matches!(
+      if is_transitioning_fullscreen
+        && let Err(err) = window.native().mark_fullscreen(matches!(
           window.state(),
           WindowState::Fullscreen(_)
-        )) {
-          tracing::warn!("Failed to mark window as fullscreen: {}", err);
-        }
+        ))
+      {
+        tracing::warn!("Failed to mark window as fullscreen: {}", err);
       }
     }
 
@@ -364,11 +359,9 @@ fn redraw_containers(
         window.display_state(),
         DisplayState::Showing | DisplayState::Hiding
       )
+      && let Err(err) = window.native().set_taskbar_visibility(is_visible)
     {
-      if let Err(err) = window.native().set_taskbar_visibility(is_visible)
-      {
-        tracing::warn!("Failed to set taskbar visibility: {}", err);
-      }
+      tracing::warn!("Failed to set taskbar visibility: {}", err);
     }
   }
 
@@ -672,8 +665,9 @@ pub fn animate_pan_workspace(
   if config.value.general.animation_enabled && delta.abs() > 20.0 {
     let duration_ms = config.value.general.animation_duration_ms.max(20);
     let steps = (duration_ms / 16).clamp(3, 8);
-    let step_delay =
-      std::time::Duration::from_millis(u64::from(duration_ms) / u64::from(steps));
+    let step_delay = std::time::Duration::from_millis(
+      u64::from(duration_ms) / u64::from(steps),
+    );
 
     let tiling_windows: Vec<WindowContainer> = workspace
       .descendants()
@@ -692,13 +686,13 @@ pub fn animate_pan_workspace(
 
       let mut step_positions = Vec::new();
       for win in &tiling_windows {
-        if let Ok(rect) = win.to_rect() {
-          if let Ok(border_delta) = win.total_border_delta() {
-            step_positions.push((
-              win.native().clone(),
-              rect.apply_delta(&border_delta, None),
-            ));
-          }
+        if let Ok(rect) = win.to_rect()
+          && let Ok(border_delta) = win.total_border_delta()
+        {
+          step_positions.push((
+            win.native().clone(),
+            rect.apply_delta(&border_delta, None),
+          ));
         }
       }
 
@@ -749,4 +743,3 @@ fn auto_pan_viewport(
 
   Ok(())
 }
-

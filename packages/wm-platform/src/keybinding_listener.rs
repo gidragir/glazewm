@@ -1,15 +1,15 @@
 use std::{
   collections::HashMap,
   sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
   },
 };
 
 use tokio::sync::mpsc;
 
 use crate::{
-  platform_event::KeybindingEvent, platform_impl, Dispatcher, Key,
+  Dispatcher, Key, platform_event::KeybindingEvent, platform_impl,
 };
 
 /// Modifier key groups, where each entry maps a generic key (e.g.

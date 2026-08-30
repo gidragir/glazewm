@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::{platform_event::MouseEvent, platform_impl, Dispatcher};
+use crate::{Dispatcher, platform_event::MouseEvent, platform_impl};
 
 /// Available mouse events that [`MouseListener`] can listen for.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

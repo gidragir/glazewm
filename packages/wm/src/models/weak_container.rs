@@ -23,7 +23,9 @@ impl WeakContainer {
   #[must_use]
   pub fn upgrade(&self) -> Option<Container> {
     match self {
-      Self::Root(w) => w.upgrade().map(|rc| Container::Root(RootContainer(rc))),
+      Self::Root(w) => {
+        w.upgrade().map(|rc| Container::Root(RootContainer(rc)))
+      }
       Self::Monitor(w) => {
         w.upgrade().map(|rc| Container::Monitor(Monitor(rc)))
       }
@@ -33,9 +35,9 @@ impl WeakContainer {
       Self::Split(w) => {
         w.upgrade().map(|rc| Container::Split(SplitContainer(rc)))
       }
-      Self::TilingWindow(w) => {
-        w.upgrade().map(|rc| Container::TilingWindow(TilingWindow(rc)))
-      }
+      Self::TilingWindow(w) => w
+        .upgrade()
+        .map(|rc| Container::TilingWindow(TilingWindow(rc))),
       Self::NonTilingWindow(w) => w
         .upgrade()
         .map(|rc| Container::NonTilingWindow(NonTilingWindow(rc))),
@@ -49,7 +51,9 @@ impl WeakContainer {
       Container::Monitor(c) => Self::Monitor(Rc::downgrade(&c.0)),
       Container::Workspace(c) => Self::Workspace(Rc::downgrade(&c.0)),
       Container::Split(c) => Self::Split(Rc::downgrade(&c.0)),
-      Container::TilingWindow(c) => Self::TilingWindow(Rc::downgrade(&c.0)),
+      Container::TilingWindow(c) => {
+        Self::TilingWindow(Rc::downgrade(&c.0))
+      }
       Container::NonTilingWindow(c) => {
         Self::NonTilingWindow(Rc::downgrade(&c.0))
       }

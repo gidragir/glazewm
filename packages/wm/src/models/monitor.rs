@@ -7,9 +7,7 @@ use wm_platform::{Display, Rect};
 
 use crate::{
   impl_common_getters, impl_container_debug,
-  models::{
-    Container, NativeMonitorProperties, WeakContainer, Workspace,
-  },
+  models::{Container, NativeMonitorProperties, WeakContainer, Workspace},
   traits::{CommonGetters, PositionGetters},
 };
 

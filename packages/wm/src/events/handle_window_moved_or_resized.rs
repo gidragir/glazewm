@@ -1,7 +1,7 @@
 use anyhow::Context;
 use wm_common::{
-  try_warn, ActiveDrag, ActiveDragOperation, DisplayState,
-  FloatingStateConfig, FullscreenStateConfig, HideMethod, WindowState,
+  ActiveDrag, ActiveDragOperation, DisplayState, FloatingStateConfig,
+  FullscreenStateConfig, HideMethod, WindowState, try_warn,
 };
 #[cfg(target_os = "windows")]
 use wm_platform::NativeWindowWindowsExt;
@@ -78,13 +78,15 @@ pub fn handle_window_moved_or_resized(
 
     // Ignore duplicate or near-duplicate move/resize events (e.g. from DWM
     // subpixel rounding). Window position changes can trigger multiple
-    // events. For example, restoring from maximized can trigger as many as 4
-    // identical events on Windows.
+    // events. For example, restoring from maximized can trigger as many as
+    // 4 identical events on Windows.
     let is_same_frame = old_frame_position == frame_position
       || ((old_frame_position.x() - frame_position.x()).abs() <= 2
         && (old_frame_position.y() - frame_position.y()).abs() <= 2
-        && (old_frame_position.width() - frame_position.width()).abs() <= 2
-        && (old_frame_position.height() - frame_position.height()).abs() <= 2);
+        && (old_frame_position.width() - frame_position.width()).abs()
+          <= 2
+        && (old_frame_position.height() - frame_position.height()).abs()
+          <= 2);
 
     if is_same_frame
       && old_is_maximized == is_maximized
@@ -499,19 +501,19 @@ fn update_drag_state(
       // Flatten the parent split container if it only contains the window.
       // TODO: Consider doing this to `move_container_within_tree`, so that
       // the behavior is consistent.
-      if let Some(split_parent) = parent.as_split() {
-        if split_parent.child_count() == 1 {
-          flatten_split_container(split_parent.clone())?;
+      if let Some(split_parent) = parent.as_split()
+        && split_parent.child_count() == 1
+      {
+        flatten_split_container(split_parent.clone())?;
 
-          // Hacky fix to redraw siblings after flattening. The parent is
-          // queued for redraw from the state change, which gets detached
-          // on flatten.
-          // TODO: Change `queue_containers_to_redraw` to iterate over its
-          // descendant windows and store those instead.
-          state
-            .pending_sync
-            .queue_containers_to_redraw(window.tiling_siblings());
-        }
+        // Hacky fix to redraw siblings after flattening. The parent is
+        // queued for redraw from the state change, which gets detached
+        // on flatten.
+        // TODO: Change `queue_containers_to_redraw` to iterate over its
+        // descendant windows and store those instead.
+        state
+          .pending_sync
+          .queue_containers_to_redraw(window.tiling_siblings());
       }
     }
   }

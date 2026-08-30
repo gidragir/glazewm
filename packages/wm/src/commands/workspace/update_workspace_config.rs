@@ -16,12 +16,11 @@ pub fn update_workspace_config(
   let current_config = workspace.config();
 
   // Validate the workspace name change.
-  if let Some(new_name) = &new_config.name {
-    if new_name != &current_config.name {
-      if let Some(_other_workspace) = state.workspace_by_name(new_name) {
-        anyhow::bail!("The workspace \"{}\" already exists", new_name);
-      }
-    }
+  if let Some(new_name) = &new_config.name
+    && new_name != &current_config.name
+    && let Some(_other_workspace) = state.workspace_by_name(new_name)
+  {
+    anyhow::bail!("The workspace \"{new_name}\" already exists");
   }
 
   // Update the config with the incoming values.

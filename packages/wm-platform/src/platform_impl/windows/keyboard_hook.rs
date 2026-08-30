@@ -8,8 +8,8 @@ use windows::Win32::{
       VK_RMENU, VK_RSHIFT, VK_RWIN,
     },
     WindowsAndMessaging::{
-      CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
-      KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+      CallNextHookEx, HHOOK, KBDLLHOOKSTRUCT, SetWindowsHookExW,
+      UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
     },
   },
 };

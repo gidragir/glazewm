@@ -7,7 +7,9 @@ pub enum Error {
   #[cfg(target_os = "windows")]
   Windows(#[from] windows::core::Error),
 
-  #[error("Accessibility operation failed for attribute {0} with error code: {1}")]
+  #[error(
+    "Accessibility operation failed for attribute {0} with error code: {1}"
+  )]
   #[cfg(target_os = "macos")]
   Accessibility(String, i32),
 
@@ -99,7 +101,9 @@ pub enum ParseError {
   #[error("Invalid delta value: {0}")]
   Delta(String),
 
-  #[error("Invalid direction '{0}': must be one of 'left', 'right', 'up', or 'down'.")]
+  #[error(
+    "Invalid direction '{0}': must be one of 'left', 'right', 'up', or 'down'."
+  )]
   Direction(String),
 }
 

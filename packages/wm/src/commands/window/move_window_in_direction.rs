@@ -56,10 +56,9 @@ fn move_tiling_window(
   if let Some(split_parent) = window_to_move
     .parent()
     .and_then(|parent| parent.as_split().cloned())
+    && split_parent.child_count() == 1
   {
-    if split_parent.child_count() == 1 {
-      flatten_split_container(split_parent)?;
-    }
+    flatten_split_container(split_parent)?;
   }
 
   let parent = window_to_move
@@ -70,17 +69,16 @@ fn move_tiling_window(
     == TilingDirection::from_direction(direction);
 
   // Attempt to swap or move the window into a sibling container.
-  if has_matching_tiling_direction {
-    if let Some(sibling) =
+  if has_matching_tiling_direction
+    && let Some(sibling) =
       tiling_sibling_in_direction(&window_to_move, direction)
-    {
-      return move_to_sibling_container(
-        window_to_move,
-        sibling,
-        direction,
-        state,
-      );
-    }
+  {
+    return move_to_sibling_container(
+      window_to_move,
+      sibling,
+      direction,
+      state,
+    );
   }
 
   // Attempt to move the window to workspace in given direction.
@@ -225,7 +223,6 @@ fn move_to_workspace_in_direction(
 
   Ok(())
 }
-
 
 fn insert_into_ancestor(
   window_to_move: &TilingWindow,
@@ -443,10 +440,12 @@ mod tests {
       ])
       .call();
 
-    let monitor = Monitor::mock().workspaces(vec![workspace.clone()]).call();
+    let monitor =
+      Monitor::mock().workspaces(vec![workspace.clone()]).call();
     let _ = monitor;
 
-    // Moving win4 Down should be a safe no-op on infinite horizontal canvas
+    // Moving win4 Down should be a safe no-op on infinite horizontal
+    // canvas
     move_window_in_direction(
       win4.clone().into(),
       &Direction::Down,
@@ -500,7 +499,8 @@ mod tests {
       .tiling_containers(vec![split.clone().into(), win_c.clone().into()])
       .call();
 
-    let monitor = Monitor::mock().workspaces(vec![workspace.clone()]).call();
+    let monitor =
+      Monitor::mock().workspaces(vec![workspace.clone()]).call();
     let _ = monitor;
 
     // Moving win_a Down should swap with win_b in the vertical column
@@ -556,7 +556,8 @@ mod tests {
     let _monitor =
       Monitor::mock().workspaces(vec![workspace.clone()]).call();
 
-    // Moving win_c Left should swap places with the `split` column, NOT merge into it
+    // Moving win_c Left should swap places with the `split` column, NOT
+    // merge into it
     move_window_in_direction(
       win_c.clone().into(),
       &Direction::Left,

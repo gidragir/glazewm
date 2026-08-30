@@ -1,15 +1,15 @@
 use windows::{
-  core::{w, PCWSTR},
   Win32::{
     Foundation::{
-      CloseHandle, GetLastError, ERROR_ALREADY_EXISTS,
-      ERROR_FILE_NOT_FOUND, HANDLE,
+      CloseHandle, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND,
+      GetLastError, HANDLE,
     },
     System::Threading::{
       CreateMutexW, OpenMutexW, ReleaseMutex,
       SYNCHRONIZATION_ACCESS_RIGHTS,
     },
   },
+  core::{PCWSTR, w},
 };
 
 /// Arbitrary GUID to uniquely identify the application.
@@ -27,13 +27,13 @@ impl SingleInstance {
     // Create a named system-wide mutex.
     let handle = unsafe { CreateMutexW(None, true, APP_GUID) }?;
 
-    if let Err(err) = unsafe { GetLastError() } {
-      if err == ERROR_ALREADY_EXISTS.into() {
-        return Err(crate::Error::Platform(
-          "Another instance of the application is already running."
-            .to_string(),
-        ));
-      }
+    if let Err(err) = unsafe { GetLastError() }
+      && err == ERROR_ALREADY_EXISTS.into()
+    {
+      return Err(crate::Error::Platform(
+        "Another instance of the application is already running."
+          .to_string(),
+      ));
     }
 
     Ok(Self { handle })

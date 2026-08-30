@@ -9,8 +9,8 @@ use anyhow::Context;
 use auto_launch::AutoLaunch;
 use tokio::sync::mpsc;
 use tray_icon::{
-  menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
   Icon, TrayIcon, TrayIconBuilder,
+  menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
 };
 #[cfg(target_os = "windows")]
 use wm_platform::DispatcherExtWindows;
@@ -52,7 +52,7 @@ impl FromStr for TrayMenuId {
       "toggle_window_animations" => Ok(Self::ToggleWindowAnimations),
       "run_on_startup" => Ok(Self::RunOnStartup),
       "exit" => Ok(Self::Exit),
-      _ => anyhow::bail!("Invalid tray menu event: {}", event),
+      _ => anyhow::bail!("Invalid tray menu event: {event}"),
     }
   }
 }
@@ -107,8 +107,8 @@ impl SystemTray {
       let menu_event_rx = MenuEvent::receiver();
 
       while let Ok(event) = menu_event_rx.recv() {
-        if let Ok(menu_event) = TrayMenuId::from_str(event.id.as_ref()) {
-          if let Err(err) = Self::handle_menu_event(
+        if let Ok(menu_event) = TrayMenuId::from_str(event.id.as_ref())
+          && let Err(err) = Self::handle_menu_event(
             &menu_event,
             &dispatcher,
             &config_path,
@@ -116,9 +116,9 @@ impl SystemTray {
             &exit_tx,
             &animations_enabled,
             &run_on_startup_enabled,
-          ) {
-            tracing::warn!("Failed to handle tray menu event: {}", err);
-          }
+          )
+        {
+          tracing::warn!("Failed to handle tray menu event: {}", err);
         }
       }
     });

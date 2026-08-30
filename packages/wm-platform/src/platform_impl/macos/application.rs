@@ -9,8 +9,8 @@ use objc2_core_foundation::{CFArray, CFRetained};
 use objc2_foundation::NSString;
 
 use crate::{
-  platform_impl::{ffi, AXUIElementExt, NativeWindow},
   Dispatcher, ThreadBound, WindowId,
+  platform_impl::{AXUIElementExt, NativeWindow, ffi},
 };
 
 pub type ProcessId = i32;

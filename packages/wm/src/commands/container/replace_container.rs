@@ -1,4 +1,4 @@
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use wm_common::VecDequeExt;
 
 use super::{attach_container, detach_container, resize_tiling_container};
@@ -51,12 +51,11 @@ pub fn replace_container(
 
   // Match the tiling size of the replaced container if the replacement
   // is also a tiling container.
-  if let Ok(tiling_size) = tiling_size {
-    if let Ok(replacement_container) =
+  if let Ok(tiling_size) = tiling_size
+    && let Ok(replacement_container) =
       replacement_container.as_tiling_container()
-    {
-      resize_tiling_container(&replacement_container, tiling_size);
-    }
+  {
+    resize_tiling_container(&replacement_container, tiling_size);
   }
 
   Ok(())

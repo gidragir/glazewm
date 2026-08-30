@@ -9,7 +9,7 @@ use windows::Win32::Graphics::Gdi::HMONITOR;
 
 #[cfg(target_os = "macos")]
 use crate::ThreadBound;
-use crate::{platform_impl, Rect};
+use crate::{Rect, platform_impl};
 
 /// Unique identifier for a display.
 ///

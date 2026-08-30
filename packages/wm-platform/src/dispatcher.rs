@@ -1,8 +1,8 @@
 use std::{
   path::Path,
   sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
   },
   thread::ThreadId,
 };
@@ -13,7 +13,7 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::{NSAlert, NSAlertStyle, NSEvent};
 #[cfg(target_os = "macos")]
 use objc2_application_services::{
-  kAXTrustedCheckOptionPrompt, AXIsProcessTrustedWithOptions,
+  AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
 };
 #[cfg(target_os = "macos")]
 use objc2_core_foundation::{CFBoolean, CFDictionary, CGPoint};
@@ -23,7 +23,6 @@ use objc2_core_graphics::{CGError, CGEvent, CGWarpMouseCursorPosition};
 use objc2_foundation::NSString;
 #[cfg(target_os = "windows")]
 use windows::{
-  core::PCWSTR,
   Win32::{
     Foundation::POINT,
     System::Environment::ExpandEnvironmentStringsW,
@@ -32,24 +31,25 @@ use windows::{
         GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON,
       },
       Shell::{
-        ShellExecuteExW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS,
-        SHELLEXECUTEINFOW,
+        SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+        ShellExecuteExW,
       },
       WindowsAndMessaging::{
-        GetCursorPos, MessageBoxW, SetCursorPos, SystemParametersInfoW,
-        ANIMATIONINFO, MB_ICONERROR, MB_OK, MB_SYSTEMMODAL,
-        SPIF_SENDCHANGE, SPIF_UPDATEINIFILE, SPI_GETANIMATION,
-        SPI_SETANIMATION, SW_HIDE, SW_NORMAL,
-        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+        ANIMATIONINFO, GetCursorPos, MB_ICONERROR, MB_OK, MB_SYSTEMMODAL,
+        MessageBoxW, SPI_GETANIMATION, SPI_SETANIMATION, SPIF_SENDCHANGE,
+        SPIF_UPDATEINIFILE, SW_HIDE, SW_NORMAL,
+        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetCursorPos,
+        SystemParametersInfoW,
       },
     },
   },
+  core::PCWSTR,
 };
 
 #[cfg(target_os = "macos")]
 use crate::platform_impl::Application;
 use crate::{
-  platform_impl, Display, DisplayDevice, MouseButton, NativeWindow, Point,
+  Display, DisplayDevice, MouseButton, NativeWindow, Point, platform_impl,
 };
 
 /// Type alias for a closure to be executed by the event loop.

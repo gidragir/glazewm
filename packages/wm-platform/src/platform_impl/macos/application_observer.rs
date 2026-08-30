@@ -5,15 +5,15 @@ use std::{
 
 use objc2_application_services::{AXError, AXObserver, AXUIElement};
 use objc2_core_foundation::{
-  kCFRunLoopDefaultMode, CFRetained, CFRunLoop, CFRunLoopSource, CFString,
+  CFRetained, CFRunLoop, CFRunLoopSource, CFString, kCFRunLoopDefaultMode,
 };
 use tokio::sync::mpsc;
 
 use crate::{
+  NativeWindowExtMacOs, ThreadBound, WindowEvent, WindowId,
   platform_impl::{
     Application, NativeWindow, ProcessId, WindowEventNotificationInner,
   },
-  NativeWindowExtMacOs, ThreadBound, WindowEvent, WindowId,
 };
 
 /// Notifications to register for the `AXUIElement` of an application.

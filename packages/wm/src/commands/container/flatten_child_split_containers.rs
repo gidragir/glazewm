@@ -42,12 +42,11 @@ pub fn flatten_child_split_containers(
       }) {
         // Additionally flatten redundant top-level split containers in
         // the child.
-        if split_child.child_count() == 1 {
-          if let Some(split_grandchild) =
+        if split_child.child_count() == 1
+          && let Some(split_grandchild) =
             split_child.children()[0].as_split()
-          {
-            flatten_split_container(split_grandchild.clone())?;
-          }
+        {
+          flatten_split_container(split_grandchild.clone())?;
         }
 
         flatten_split_container(split_child.clone())?;

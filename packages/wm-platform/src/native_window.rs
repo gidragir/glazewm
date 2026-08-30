@@ -10,11 +10,11 @@ use windows::Win32::{
   },
 };
 
-use crate::{platform_impl, Rect};
-#[cfg(target_os = "macos")]
-use crate::{platform_impl::AXUIElementExt, ThreadBound};
 #[cfg(target_os = "windows")]
 use crate::{Color, CornerStyle, Delta, OpacityValue, RectDelta};
+use crate::{Rect, platform_impl};
+#[cfg(target_os = "macos")]
+use crate::{ThreadBound, platform_impl::AXUIElementExt};
 
 /// Unique identifier of a window.
 ///

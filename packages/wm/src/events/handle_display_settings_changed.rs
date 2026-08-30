@@ -20,19 +20,21 @@ pub fn handle_display_settings_changed(
 
   // Ignore the event if retrieval of the displays or their properties
   // fails (can happen transiently during sleep/wake).
-  let displays = try_warn!(state
-    .dispatcher
-    .sorted_displays()
-    .map_err(anyhow::Error::from)
-    .and_then(|displays| {
-      displays
-        .into_iter()
-        .map(|display| {
-          let properties = NativeMonitorProperties::try_from(&display)?;
-          Ok((display, properties))
-        })
-        .try_collect::<Vec<_>>()
-    }));
+  let displays = try_warn!(
+    state
+      .dispatcher
+      .sorted_displays()
+      .map_err(anyhow::Error::from)
+      .and_then(|displays| {
+        displays
+          .into_iter()
+          .map(|display| {
+            let properties = NativeMonitorProperties::try_from(&display)?;
+            Ok((display, properties))
+          })
+          .try_collect::<Vec<_>>()
+      })
+  );
 
   let mut pending_monitors = state.monitors();
   let mut unmatched_displays = Vec::new();

@@ -4,11 +4,11 @@ use objc2::rc::Retained;
 use tokio::sync::mpsc;
 
 use crate::{
+  Dispatcher, ThreadBound,
   platform_impl::{
     NotificationCenter, NotificationEvent, NotificationName,
     NotificationObserver,
   },
-  Dispatcher, ThreadBound,
 };
 
 /// Platform-specific implementation of [`DisplayListener`].

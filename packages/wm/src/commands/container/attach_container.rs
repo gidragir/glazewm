@@ -42,7 +42,8 @@ pub fn attach_container(
 
     if target_parent.as_workspace().is_some() {
       if child.tiling_size() <= 0.0 {
-        let default_size = if tiling_siblings.is_empty() { 1.0 } else { 0.5 };
+        let default_size =
+          if tiling_siblings.is_empty() { 1.0 } else { 0.5 };
         child.set_tiling_size(default_size);
       }
       return Ok(());

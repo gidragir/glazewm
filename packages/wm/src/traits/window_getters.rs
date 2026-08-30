@@ -116,9 +116,12 @@ pub trait WindowGetters: CommonGetters {
       }
 
       // Change to fullscreen if the frame *exceeds* the workspace bounds.
-      // For tiling windows, require a clear margin to prevent false-positive
-      // oscillations on 0px/small outer gap workspaces.
-      WindowState::Tiling => frame.inset(20).contains_rect(&workspace_rect),
+      // For tiling windows, require a clear margin to prevent
+      // false-positive oscillations on 0px/small outer gap
+      // workspaces.
+      WindowState::Tiling => {
+        frame.inset(20).contains_rect(&workspace_rect)
+      }
       _ => frame.inset(1).contains_rect(&workspace_rect),
     };
 

@@ -4,12 +4,12 @@ use anyhow::Context;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-  connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream,
+  MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message,
 };
 use uuid::Uuid;
 use wm_common::{
-  ClientResponseMessage, EventSubscriptionMessage, ServerMessage,
-  DEFAULT_IPC_PORT,
+  ClientResponseMessage, DEFAULT_IPC_PORT, EventSubscriptionMessage,
+  ServerMessage,
 };
 
 pub struct IpcClient {
@@ -58,10 +58,10 @@ impl IpcClient {
     client_message: &str,
   ) -> Option<ClientResponseMessage> {
     while let Ok(response) = self.next_message().await {
-      if let ServerMessage::ClientResponse(client_response) = response {
-        if client_response.client_message == client_message {
-          return Some(client_response);
-        }
+      if let ServerMessage::ClientResponse(client_response) = response
+        && client_response.client_message == client_message
+      {
+        return Some(client_response);
       }
     }
 
@@ -73,10 +73,10 @@ impl IpcClient {
     subscription_id: &Uuid,
   ) -> Option<EventSubscriptionMessage> {
     while let Ok(response) = self.next_message().await {
-      if let ServerMessage::EventSubscription(event_sub) = response {
-        if &event_sub.subscription_id == subscription_id {
-          return Some(event_sub);
-        }
+      if let ServerMessage::EventSubscription(event_sub) = response
+        && &event_sub.subscription_id == subscription_id
+      {
+        return Some(event_sub);
       }
     }
 

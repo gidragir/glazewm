@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+  ParsedConfig,
   parsed_config::{
     FloatingStateConfig, FullscreenStateConfig, InitialWindowState,
   },
-  ParsedConfig,
 };
 
 /// Represents the possible states a window can have.

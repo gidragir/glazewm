@@ -1,20 +1,21 @@
 use crate::{
   models::TilingContainer,
-  traits::{CommonGetters, TilingSizeGetters, MIN_TILING_SIZE},
+  traits::{CommonGetters, MIN_TILING_SIZE, TilingSizeGetters},
 };
 
 pub fn resize_tiling_container(
   container_to_resize: &TilingContainer,
   target_size: f32,
 ) {
-  // If the container is a top-level column on a horizontal workspace (infinite canvas),
-  // resize it independently without constraining against or resizing siblings.
-  if let Some(parent) = container_to_resize.parent() {
-    if parent.as_workspace().is_some() {
-      let clamped_target_size = target_size.max(MIN_TILING_SIZE);
-      container_to_resize.set_tiling_size(clamped_target_size);
-      return;
-    }
+  // If the container is a top-level column on a horizontal workspace
+  // (infinite canvas), resize it independently without constraining
+  // against or resizing siblings.
+  if let Some(parent) = container_to_resize.parent()
+    && parent.as_workspace().is_some()
+  {
+    let clamped_target_size = target_size.max(MIN_TILING_SIZE);
+    container_to_resize.set_tiling_size(clamped_target_size);
+    return;
   }
 
   let tiling_siblings =

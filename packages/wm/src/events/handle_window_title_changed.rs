@@ -1,5 +1,5 @@
 use tracing::info;
-use wm_common::{try_warn, WindowRuleEvent};
+use wm_common::{WindowRuleEvent, try_warn};
 use wm_platform::NativeWindow;
 
 use crate::{

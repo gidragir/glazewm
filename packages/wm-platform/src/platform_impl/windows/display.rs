@@ -1,27 +1,27 @@
 use windows::{
-  core::PCWSTR,
   Win32::{
     Foundation::{BOOL, LPARAM, POINT, RECT},
     Graphics::Gdi::{
-      EnumDisplayDevicesW, EnumDisplayMonitors, EnumDisplaySettingsW,
-      GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, DEVMODEW,
-      DISPLAY_DEVICEW, DISPLAY_DEVICE_ACTIVE, ENUM_CURRENT_SETTINGS, HDC,
-      HMONITOR, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
-      MONITOR_DEFAULTTOPRIMARY,
+      DEVMODEW, DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICEW,
+      ENUM_CURRENT_SETTINGS, EnumDisplayDevicesW, EnumDisplayMonitors,
+      EnumDisplaySettingsW, GetMonitorInfoW, HDC, HMONITOR,
+      MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY, MONITORINFO,
+      MONITORINFOEXW, MonitorFromPoint, MonitorFromWindow,
     },
     UI::{
       HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
       WindowsAndMessaging::EDD_GET_DEVICE_INTERFACE_NAME,
     },
   },
+  core::PCWSTR,
 };
 
 use crate::{
+  Dispatcher, NativeWindow, Point, Rect,
   display::{
     ConnectionState, DisplayDeviceId, DisplayId, MirroringState,
     OutputTechnology,
   },
-  Dispatcher, NativeWindow, Point, Rect,
 };
 
 /// Platform-specific implementation of [`Display`].

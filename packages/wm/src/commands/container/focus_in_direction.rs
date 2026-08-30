@@ -23,7 +23,7 @@ pub fn focus_in_direction(
         |container| Ok(Some(container)),
       )?
     }
-    Container::NonTilingWindow(ref non_tiling_window) => {
+    Container::NonTilingWindow(non_tiling_window) => {
       match non_tiling_window.state() {
         WindowState::Floating(_) => {
           floating_focus_target(origin_container, direction)

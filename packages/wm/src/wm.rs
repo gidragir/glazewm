@@ -1,4 +1,4 @@
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use tokio::sync::mpsc::{self};
 use tracing::warn;
 use uuid::Uuid;
@@ -11,7 +11,8 @@ use wm_common::{
 #[cfg(target_os = "windows")]
 use wm_platform::NativeWindowWindowsExt;
 use wm_platform::{
-  Direction, Dispatcher, LengthValue, PlatformEvent, RectDelta, WindowEvent,
+  Direction, Dispatcher, LengthValue, PlatformEvent, RectDelta,
+  WindowEvent,
 };
 
 use crate::{
@@ -26,10 +27,10 @@ use crate::{
     },
     monitor::focus_monitor,
     window::{
-      consume_or_expel_window, cycle_column_preset, ignore_window,
-      move_window_in_direction, move_window_to_workspace, resize_window,
-      set_column_width, set_window_position, set_window_size,
-      update_window_state, WindowPositionTarget,
+      WindowPositionTarget, consume_or_expel_window, cycle_column_preset,
+      ignore_window, move_window_in_direction, move_window_to_workspace,
+      resize_window, set_column_width, set_window_position,
+      set_window_size, update_window_state,
     },
     workspace::{
       focus_workspace, move_workspace_in_direction,
@@ -786,14 +787,12 @@ impl WindowManager {
       InvokeCommand::WmEnableBindingMode { name } => {
         enable_binding_mode(name, state, config)
       }
-      InvokeCommand::CycleColumnPreset { presets } => {
-        cycle_column_preset(
-          &subject_container,
-          presets.as_deref(),
-          state,
-          &config.value,
-        )
-      }
+      InvokeCommand::CycleColumnPreset { presets } => cycle_column_preset(
+        &subject_container,
+        presets.as_deref(),
+        state,
+        &config.value,
+      ),
       InvokeCommand::SetColumnWidth { width } => {
         set_column_width(&subject_container, width, state)
       }
@@ -805,9 +804,7 @@ impl WindowManager {
         if let Some(workspace) = workspace {
           let new_offset = (workspace.offset_x() - delta).max(0.0);
           crate::commands::general::animate_pan_workspace(
-            &workspace,
-            new_offset,
-            config,
+            &workspace, new_offset, config,
           );
           state.pending_sync.queue_container_to_redraw(workspace);
         }
@@ -821,9 +818,7 @@ impl WindowManager {
         if let Some(workspace) = workspace {
           let new_offset = workspace.offset_x() + delta;
           crate::commands::general::animate_pan_workspace(
-            &workspace,
-            new_offset,
-            config,
+            &workspace, new_offset, config,
           );
           state.pending_sync.queue_container_to_redraw(workspace);
         }

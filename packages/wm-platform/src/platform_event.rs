@@ -1,7 +1,7 @@
 use super::NativeWindow;
 use crate::{
-  platform_impl::WindowEventNotificationInner, Keybinding, MouseEventKind,
-  Point, WindowId,
+  Keybinding, MouseEventKind, Point, WindowId,
+  platform_impl::WindowEventNotificationInner,
 };
 
 #[derive(Clone, Debug)]

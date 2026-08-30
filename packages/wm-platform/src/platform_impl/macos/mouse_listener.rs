@@ -5,7 +5,7 @@ use std::{
 };
 
 use objc2_core_foundation::{
-  kCFRunLoopCommonModes, CFMachPort, CFRetained, CFRunLoop,
+  CFMachPort, CFRetained, CFRunLoop, kCFRunLoopCommonModes,
 };
 use objc2_core_graphics::{
   CGEvent, CGEventField, CGEventMask, CGEventTapLocation,
@@ -14,9 +14,9 @@ use objc2_core_graphics::{
 use tokio::sync::mpsc;
 
 use crate::{
+  Dispatcher, Error, Point, ThreadBound, WindowId,
   mouse_listener::MouseEventKind,
   platform_event::{MouseButton, MouseEvent, PressedButtons},
-  Dispatcher, Error, Point, ThreadBound, WindowId,
 };
 
 /// Data shared with the `CGEventTap` callback.

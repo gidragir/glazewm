@@ -7,7 +7,9 @@ use crate::{
     flatten_split_container, move_container_within_tree,
     wrap_in_split_container,
   },
-  models::{SplitContainer, TilingContainer, TilingWindow, WindowContainer},
+  models::{
+    SplitContainer, TilingContainer, TilingWindow, WindowContainer,
+  },
   traits::{CommonGetters, TilingDirectionGetters},
   user_config::UserConfig,
   wm_state::WmState,
@@ -25,19 +27,21 @@ pub fn consume_or_expel_window(
 
   let parent = window_to_act.parent().context("No parent container.")?;
 
-  // Check if the window is inside a vertical split container (i.e. inside a column).
-  if let Some(split_parent) = parent.as_split().cloned() {
-    if split_parent.tiling_direction() == TilingDirection::Vertical {
-      return expel_window_from_column(
-        &window_to_act,
-        split_parent,
-        direction,
-        state,
-      );
-    }
+  // Check if the window is inside a vertical split container (i.e. inside
+  // a column).
+  if let Some(split_parent) = parent.as_split().cloned()
+    && split_parent.tiling_direction() == TilingDirection::Vertical
+  {
+    return expel_window_from_column(
+      &window_to_act,
+      split_parent,
+      direction,
+      state,
+    );
   }
 
-  // Otherwise, if the window is in a horizontal container (workspace), consume it into the sibling column.
+  // Otherwise, if the window is in a horizontal container (workspace),
+  // consume it into the sibling column.
   consume_window_into_column(&window_to_act, direction, state, config)
 }
 
@@ -187,7 +191,8 @@ mod tests {
     )
     .unwrap();
 
-    // Workspace should now contain 1 column (SplitContainer) with 2 children [win_a, win_b]
+    // Workspace should now contain 1 column (SplitContainer) with 2
+    // children [win_a, win_b]
     assert_eq!(workspace.child_count(), 1);
     let split = workspace
       .tiling_children()

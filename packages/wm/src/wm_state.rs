@@ -558,10 +558,9 @@ impl WmState {
   pub fn emit_event(&self, event: WmEvent) {
     if self.has_initialized
       && (!self.is_paused || matches!(event, WmEvent::PauseChanged { .. }))
+      && let Err(err) = self.event_tx.send(event)
     {
-      if let Err(err) = self.event_tx.send(event) {
-        warn!("Failed to send event: {}", err);
-      }
+      warn!("Failed to send event: {}", err);
     }
   }
 
@@ -688,10 +687,10 @@ impl Drop for WmState {
     for window in &managed_windows {
       // Redraw windows to their intended positions. On macOS, this will
       // unhide windows that are on other workspaces.
-      if let Ok(rect) = window.to_rect() {
-        if let Err(err) = window.native().set_frame(&rect) {
-          warn!("Failed to redraw window on cleanup: {:?}", err);
-        }
+      if let Ok(rect) = window.to_rect()
+        && let Err(err) = window.native().set_frame(&rect)
+      {
+        warn!("Failed to redraw window on cleanup: {:?}", err);
       }
 
       // Reset any effects on Windows.

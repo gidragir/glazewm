@@ -1,4 +1,4 @@
-use crate::{platform_impl, Dispatcher};
+use crate::{Dispatcher, platform_impl};
 
 /// A cross-platform event loop that allows for remote dispatching via
 /// [`Dispatcher`].

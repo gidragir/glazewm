@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use objc2::{rc::Retained, MainThreadMarker};
+use objc2::{MainThreadMarker, rc::Retained};
 use objc2_app_kit::NSScreen;
 use objc2_core_foundation::{CFRetained, CFUUID};
 use objc2_core_graphics::{
@@ -8,11 +8,11 @@ use objc2_core_graphics::{
   CGDisplayMirrorsDisplay, CGDisplayMode, CGDisplayRotation, CGError,
   CGGetActiveDisplayList, CGGetOnlineDisplayList, CGMainDisplayID,
 };
-use objc2_foundation::{ns_string, NSNumber, NSRect};
+use objc2_foundation::{NSNumber, NSRect, ns_string};
 
 use crate::{
-  platform_impl::ffi, ConnectionState, Dispatcher, DisplayDeviceId,
-  DisplayId, MirroringState, Point, Rect, ThreadBound,
+  ConnectionState, Dispatcher, DisplayDeviceId, DisplayId, MirroringState,
+  Point, Rect, ThreadBound, platform_impl::ffi,
 };
 
 /// Platform-specific implementation of [`Display`].

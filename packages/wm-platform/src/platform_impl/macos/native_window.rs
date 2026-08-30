@@ -11,10 +11,10 @@ use objc2_core_foundation::{
 use objc2_core_graphics::{CGDisplayIsAsleep, CGError};
 
 use crate::{
-  platform_impl::{
-    self, ffi, AXUIElement, AXUIElementExt, AXValueExt, Application,
-  },
   Dispatcher, Point, Rect, ThreadBound, WindowId,
+  platform_impl::{
+    self, AXUIElement, AXUIElementExt, AXValueExt, Application, ffi,
+  },
 };
 
 /// Platform-specific implementation of [`NativeWindow`].

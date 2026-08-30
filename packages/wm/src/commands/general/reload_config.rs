@@ -172,10 +172,9 @@ fn update_window_effects(
   // them disabled, it's best to reset to the system defaults.
   if !window_effects.focused_window.border.enabled
     && old_window_effects.focused_window.border.enabled
+    && let Ok(window) = focused_container.as_window_container()
   {
-    if let Ok(window) = focused_container.as_window_container() {
-      _ = window.native().set_border_color(None);
-    }
+    _ = window.native().set_border_color(None);
   }
 
   if !window_effects.other_windows.border.enabled

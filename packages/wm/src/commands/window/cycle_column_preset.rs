@@ -11,9 +11,12 @@ use crate::{
 
 const EPSILON: f32 = 0.01;
 
-/// Finds the top-level column ancestor (immediate child of the horizontal `Workspace`).
+/// Finds the top-level column ancestor (immediate child of the horizontal
+/// `Workspace`).
 #[must_use]
-pub fn find_column_ancestor(container: &Container) -> Option<TilingContainer> {
+pub fn find_column_ancestor(
+  container: &Container,
+) -> Option<TilingContainer> {
   let mut current = container.clone();
   while let Some(parent) = current.parent() {
     if parent.as_workspace().is_some() {
@@ -40,8 +43,8 @@ pub fn cycle_column_preset(
 
   let parent_width = parent.to_rect()?.width();
 
-  let presets = custom_presets
-    .unwrap_or(&config.general.column_width_presets);
+  let presets =
+    custom_presets.unwrap_or(&config.general.column_width_presets);
 
   if presets.is_empty() {
     return Ok(());
@@ -87,7 +90,8 @@ pub fn cycle_column_preset(
   Ok(())
 }
 
-/// Sets the width of the focused column directly to a specified length value.
+/// Sets the width of the focused column directly to a specified length
+/// value.
 pub fn set_column_width(
   subject_container: &Container,
   width: &LengthValue,

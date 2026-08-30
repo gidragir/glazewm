@@ -1,6 +1,6 @@
 use std::{iter, net::SocketAddr};
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
@@ -13,10 +13,10 @@ use tracing::{info, warn};
 use uuid::Uuid;
 use wm_common::{
   AppCommand, AppMetadataData, BindingModesData, ClientResponseData,
-  ClientResponseMessage, CommandData, EventSubscribeData,
-  EventSubscriptionMessage, FocusedData, MonitorsData, QueryCommand,
-  ServerMessage, SubscribableEvent, TilingDirectionData, WindowsData,
-  WmEvent, WorkspacesData, DEFAULT_IPC_PORT,
+  ClientResponseMessage, CommandData, DEFAULT_IPC_PORT,
+  EventSubscribeData, EventSubscriptionMessage, FocusedData, MonitorsData,
+  QueryCommand, ServerMessage, SubscribableEvent, TilingDirectionData,
+  WindowsData, WmEvent, WorkspacesData,
 };
 
 use crate::{
@@ -110,7 +110,7 @@ impl IpcServer {
                   ))?;
                 }
               }
-              Some(Err(err)) => bail!("WebSocket error: {}", err),
+              Some(Err(err)) => bail!("WebSocket error: {err}"),
               None => {
                 // WebSocket connection closed.
                 break Ok(());
@@ -159,9 +159,7 @@ impl IpcServer {
     // Respond to the client with the result of the command.
     response_tx
       .send(Self::to_client_response_msg(message, response_data)?)
-      .map_err(|err| {
-        anyhow::anyhow!("Failed to send response: {}", err)
-      })?;
+      .map_err(|err| anyhow::anyhow!("Failed to send response: {err}"))?;
 
     Ok(())
   }
@@ -392,7 +390,7 @@ impl IpcServer {
     self
       .event_tx
       .send((event_type, event))
-      .map_err(|err| anyhow::anyhow!("Failed to send event: {}", err))?;
+      .map_err(|err| anyhow::anyhow!("Failed to send event: {err}"))?;
 
     Ok(())
   }

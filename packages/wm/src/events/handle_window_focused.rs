@@ -42,10 +42,10 @@ pub fn handle_window_focused(
   }
 
   // Ignore the focus event if window is being hidden by the WM.
-  if let Some(window) = &found_window {
-    if window.display_state() == DisplayState::Hiding {
-      return Ok(());
-    }
+  if let Some(window) = &found_window
+    && window.display_state() == DisplayState::Hiding
+  {
+    return Ok(());
   }
 
   // Focus effect should be updated for any change in focus that shouldn't

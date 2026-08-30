@@ -5,10 +5,7 @@ use crate::{
     Container, Monitor, NonTilingWindow, SplitContainer, TilingContainer,
     TilingWindow, Workspace,
   },
-  traits::{
-    CommonGetters, TilingDirectionGetters,
-    TilingSizeGetters,
-  },
+  traits::{CommonGetters, TilingDirectionGetters, TilingSizeGetters},
 };
 
 #[test]
@@ -70,7 +67,8 @@ fn container_ancestors_traversal() {
   assert_eq!(ancestors[1].id(), workspace.id());
   assert_eq!(ancestors[2].id(), monitor.id());
 
-  let self_and_ancestors: Vec<Container> = win.self_and_ancestors().collect();
+  let self_and_ancestors: Vec<Container> =
+    win.self_and_ancestors().collect();
   assert_eq!(self_and_ancestors.len(), 4);
   assert_eq!(self_and_ancestors[0].id(), win.id());
   assert_eq!(self_and_ancestors[1].id(), split.id());
@@ -78,10 +76,7 @@ fn container_ancestors_traversal() {
   // Direct ancestor lookups
   assert_eq!(win.workspace().map(|w| w.id()), Some(workspace.id()));
   assert_eq!(win.monitor().map(|m| m.id()), Some(monitor.id()));
-  assert_eq!(
-    win.direction_container().map(|d| d.id()),
-    Some(split.id())
-  );
+  assert_eq!(win.direction_container().map(|d| d.id()), Some(split.id()));
 }
 
 #[test]
@@ -95,7 +90,10 @@ fn container_descendants_traversal() {
     .call();
 
   let root_split = SplitContainer::mock()
-    .tiling_containers(vec![win_a.clone().into(), inner_split.clone().into()])
+    .tiling_containers(vec![
+      win_a.clone().into(),
+      inner_split.clone().into(),
+    ])
     .call();
 
   let workspace = Workspace::mock()
@@ -146,7 +144,8 @@ fn container_siblings_traversal() {
   assert_eq!(next_siblings[0].id(), win_c.id());
 
   // Test tiling_siblings
-  let tiling_sibs: Vec<TilingContainer> = win_a.tiling_siblings().collect();
+  let tiling_sibs: Vec<TilingContainer> =
+    win_a.tiling_siblings().collect();
   assert_eq!(tiling_sibs.len(), 2);
   assert_eq!(tiling_sibs[0].id(), win_b.id());
   assert_eq!(tiling_sibs[1].id(), win_c.id());
@@ -226,7 +225,8 @@ fn workspace_gaps_and_dto_serialization() {
     .tiling_containers(vec![win.clone().into()])
     .call();
 
-  let _monitor = Monitor::mock().workspaces(vec![workspace.clone()]).call();
+  let _monitor =
+    Monitor::mock().workspaces(vec![workspace.clone()]).call();
 
   // Test workspace outer gaps
   let gaps = workspace.outer_gaps();
@@ -253,7 +253,8 @@ fn container_focus_and_descendant_focus_order() {
     .tiling_containers(vec![split.clone().into()])
     .call();
 
-  let _monitor = Monitor::mock().workspaces(vec![workspace.clone()]).call();
+  let _monitor =
+    Monitor::mock().workspaces(vec![workspace.clone()]).call();
 
   // Focus order is tracked by child_focus_order
   assert_eq!(win_a.focus_index(), 0);

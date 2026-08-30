@@ -1,6 +1,6 @@
 use std::{iter, path::PathBuf};
 
-use clap::{error::KindFormatter, Args, Parser, ValueEnum};
+use clap::{Args, Parser, ValueEnum, error::KindFormatter};
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::Level;
 use uuid::Uuid;

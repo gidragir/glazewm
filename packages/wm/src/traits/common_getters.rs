@@ -27,7 +27,8 @@ pub trait CommonGetters {
 
   fn to_dto(&self) -> anyhow::Result<ContainerDto>;
 
-  /// Gets the parent container, unless this container is the root or detached.
+  /// Gets the parent container, unless this container is the root or
+  /// detached.
   fn parent(&self) -> Option<Container>;
 
   /// Sets the parent container. Pass `None` to detach.
@@ -359,10 +360,10 @@ impl Iterator for TilingSiblings {
 
   fn next(&mut self) -> Option<Self::Item> {
     for c in self.iter.by_ref() {
-      if c.id() != self.id {
-        if let Ok(tiling) = c.try_into() {
-          return Some(tiling);
-        }
+      if c.id() != self.id
+        && let Ok(tiling) = c.try_into()
+      {
+        return Some(tiling);
       }
     }
     None
@@ -475,7 +476,9 @@ macro_rules! impl_common_getters {
           parent.map($crate::models::WeakContainer::from_container);
       }
 
-      fn children(&self) -> ::std::collections::VecDeque<$crate::models::Container> {
+      fn children(
+        &self,
+      ) -> ::std::collections::VecDeque<$crate::models::Container> {
         self.0.borrow().children.clone()
       }
 
@@ -506,25 +509,39 @@ macro_rules! impl_common_getters {
 
       fn borrow_children(
         &self,
-      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<$crate::models::Container>> {
+      ) -> ::std::cell::Ref<
+        '_,
+        ::std::collections::VecDeque<$crate::models::Container>,
+      > {
         ::std::cell::Ref::map(self.0.borrow(), |inner| &inner.children)
       }
 
       fn borrow_children_mut(
         &self,
-      ) -> ::std::cell::RefMut<'_, ::std::collections::VecDeque<$crate::models::Container>> {
-        ::std::cell::RefMut::map(self.0.borrow_mut(), |inner| &mut inner.children)
+      ) -> ::std::cell::RefMut<
+        '_,
+        ::std::collections::VecDeque<$crate::models::Container>,
+      > {
+        ::std::cell::RefMut::map(self.0.borrow_mut(), |inner| {
+          &mut inner.children
+        })
       }
 
       fn borrow_child_focus_order(
         &self,
-      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<::uuid::Uuid>> {
-        ::std::cell::Ref::map(self.0.borrow(), |inner| &inner.child_focus_order)
+      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<::uuid::Uuid>>
+      {
+        ::std::cell::Ref::map(self.0.borrow(), |inner| {
+          &inner.child_focus_order
+        })
       }
 
       fn borrow_child_focus_order_mut(
         &self,
-      ) -> ::std::cell::RefMut<'_, ::std::collections::VecDeque<::uuid::Uuid>> {
+      ) -> ::std::cell::RefMut<
+        '_,
+        ::std::collections::VecDeque<::uuid::Uuid>,
+      > {
         ::std::cell::RefMut::map(self.0.borrow_mut(), |inner| {
           &mut inner.child_focus_order
         })
@@ -533,7 +550,8 @@ macro_rules! impl_common_getters {
   };
 }
 
-/// Implements the `CommonGetters` trait for a leaf window struct (no children fields).
+/// Implements the `CommonGetters` trait for a leaf window struct (no
+/// children fields).
 #[macro_export]
 macro_rules! impl_leaf_common_getters {
   ($struct_name:ident) => {
@@ -591,7 +609,9 @@ macro_rules! impl_leaf_common_getters {
           parent.map($crate::models::WeakContainer::from_container);
       }
 
-      fn children(&self) -> ::std::collections::VecDeque<$crate::models::Container> {
+      fn children(
+        &self,
+      ) -> ::std::collections::VecDeque<$crate::models::Container> {
         ::std::collections::VecDeque::new()
       }
 
@@ -616,26 +636,38 @@ macro_rules! impl_leaf_common_getters {
 
       fn borrow_children(
         &self,
-      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<$crate::models::Container>> {
+      ) -> ::std::cell::Ref<
+        '_,
+        ::std::collections::VecDeque<$crate::models::Container>,
+      > {
         panic!("Cannot borrow children of a leaf window");
       }
 
       fn borrow_children_mut(
         &self,
-      ) -> ::std::cell::RefMut<'_, ::std::collections::VecDeque<$crate::models::Container>> {
+      ) -> ::std::cell::RefMut<
+        '_,
+        ::std::collections::VecDeque<$crate::models::Container>,
+      > {
         panic!("Cannot borrow children mutably for a leaf container");
       }
 
       fn borrow_child_focus_order(
         &self,
-      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<::uuid::Uuid>> {
+      ) -> ::std::cell::Ref<'_, ::std::collections::VecDeque<::uuid::Uuid>>
+      {
         panic!("Cannot borrow child focus order of a leaf window");
       }
 
       fn borrow_child_focus_order_mut(
         &self,
-      ) -> ::std::cell::RefMut<'_, ::std::collections::VecDeque<::uuid::Uuid>> {
-        panic!("Cannot borrow child focus order mutably for a leaf container");
+      ) -> ::std::cell::RefMut<
+        '_,
+        ::std::collections::VecDeque<::uuid::Uuid>,
+      > {
+        panic!(
+          "Cannot borrow child focus order mutably for a leaf container"
+        );
       }
     }
   };

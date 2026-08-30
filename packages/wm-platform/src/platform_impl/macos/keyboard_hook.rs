@@ -1,7 +1,7 @@
 use std::{os::raw::c_void, ptr::NonNull};
 
 use objc2_core_foundation::{
-  kCFRunLoopCommonModes, CFMachPort, CFRetained, CFRunLoop,
+  CFMachPort, CFRetained, CFRunLoop, kCFRunLoopCommonModes,
 };
 use objc2_core_graphics::{
   CGEvent, CGEventField, CGEventFlags, CGEventMask, CGEventTapLocation,

@@ -16,7 +16,8 @@ use crate::{
   impl_position_getters_as_resizable, impl_tiling_size_getters,
   impl_window_getters,
   models::{
-    InsertionTarget, NativeWindowProperties, NonTilingWindow, WeakContainer,
+    InsertionTarget, NativeWindowProperties, NonTilingWindow,
+    WeakContainer,
   },
   traits::{
     CommonGetters, PositionGetters, TilingDirectionGetters,

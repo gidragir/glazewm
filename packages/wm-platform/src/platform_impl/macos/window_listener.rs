@@ -5,11 +5,11 @@ use objc2_app_kit::NSWorkspace;
 use tokio::sync::mpsc;
 
 use crate::{
+  Dispatcher, ThreadBound, WindowEvent,
   platform_impl::{
     self, Application, ApplicationObserver, NotificationCenter,
     NotificationEvent, NotificationName, NotificationObserver, ProcessId,
   },
-  Dispatcher, ThreadBound, WindowEvent,
 };
 
 /// Platform-specific implementation of [`WindowEventNotification`].

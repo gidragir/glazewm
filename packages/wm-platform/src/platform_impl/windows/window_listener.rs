@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use windows::Win32::{
   Foundation::HWND,
   UI::{
-    Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK},
+    Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent},
     WindowsAndMessaging::{
       EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
       EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE,

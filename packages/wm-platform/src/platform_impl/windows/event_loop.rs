@@ -2,25 +2,25 @@ use std::{
   cell::RefCell,
   collections::HashMap,
   sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
   },
   thread::{self, ThreadId},
 };
 
 use windows::{
-  core::w,
   Win32::{
     Foundation::{HWND, LPARAM, LRESULT, WPARAM},
     System::Threading::GetCurrentThreadId,
     UI::WindowsAndMessaging::{
-      CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-      GetMessageW, PostMessageW, PostThreadMessageW, RegisterClassW,
-      RegisterWindowMessageW, SendMessageW, TranslateMessage, CS_HREDRAW,
-      CS_VREDRAW, CW_USEDEFAULT, MSG, WINDOW_EX_STYLE, WM_QUIT, WNDCLASSW,
-      WNDPROC, WS_OVERLAPPEDWINDOW,
+      CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
+      DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, MSG,
+      PostMessageW, PostThreadMessageW, RegisterClassW,
+      RegisterWindowMessageW, SendMessageW, TranslateMessage,
+      WINDOW_EX_STYLE, WM_QUIT, WNDCLASSW, WNDPROC, WS_OVERLAPPEDWINDOW,
     },
   },
+  core::w,
 };
 
 use crate::{DispatchFn, Dispatcher, WndProcCallback};
@@ -262,8 +262,9 @@ impl EventLoop {
     // Handle dispatch callbacks first.
     if msg == WM_DISPATCH_CALLBACK.with(|v| *v) {
       // Convert the `WPARAM` fn pointer back to a double-boxed function.
+      #[allow(clippy::as_conversions)]
       let dispatch_fn: Box<Box<dyn FnOnce() + Send>> =
-        Box::from_raw(wparam.0 as *mut _);
+        unsafe { Box::from_raw(wparam.0 as *mut _) };
       dispatch_fn();
       return LRESULT(0);
     }
@@ -284,7 +285,7 @@ impl EventLoop {
 
     // `WM_QUIT` is handled by the message loop and should be forwarded
     // along with other messages.
-    DefWindowProcW(hwnd, msg, wparam, lparam)
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
   }
 }
 

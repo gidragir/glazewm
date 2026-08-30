@@ -1,11 +1,11 @@
 //! Utilities for testing.
 //!
 //! Available via the `test_utils` Cargo feature.
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{Arc, atomic::AtomicBool};
 
-use crate::platform_impl;
 #[cfg(target_os = "macos")]
 pub use crate::WindowId;
+use crate::platform_impl;
 pub use crate::{Dispatcher, Display, NativeWindow};
 
 impl Dispatcher {

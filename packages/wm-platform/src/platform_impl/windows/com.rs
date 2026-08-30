@@ -1,14 +1,14 @@
 use std::cell::RefCell;
 
 use windows::{
-  core::{ComInterface, IUnknown, IUnknown_Vtbl, GUID, HRESULT},
   Win32::{
     System::Com::{
-      CoCreateInstance, CoInitializeEx, CoUninitialize, IServiceProvider,
       CLSCTX_ALL, CLSCTX_SERVER, COINIT_APARTMENTTHREADED,
+      CoCreateInstance, CoInitializeEx, CoUninitialize, IServiceProvider,
     },
     UI::Shell::{ITaskbarList2, TaskbarList},
   },
+  core::{ComInterface, GUID, HRESULT, IUnknown, IUnknown_Vtbl},
 };
 
 /// COM class identifier (CLSID) for the Windows Shell that implements the

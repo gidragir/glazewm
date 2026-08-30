@@ -11,9 +11,9 @@ use windows::Win32::{
   Foundation::{HWND, POINT},
   UI::{
     Input::{
-      GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT,
-      RAWINPUTDEVICE, RAWINPUTHEADER, RIDEV_INPUTSINK, RIDEV_REMOVE,
-      RID_INPUT, RIM_TYPEMOUSE,
+      GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE,
+      RAWINPUTHEADER, RID_INPUT, RIDEV_INPUTSINK, RIDEV_REMOVE,
+      RIM_TYPEMOUSE, RegisterRawInputDevices,
     },
     WindowsAndMessaging::{
       GetCursorPos, RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_LEFT_BUTTON_UP,
@@ -24,9 +24,9 @@ use windows::Win32::{
 
 use super::FOREGROUND_INPUT_IDENTIFIER;
 use crate::{
+  Dispatcher, DispatcherExtWindows, Point,
   mouse_listener::MouseEventKind,
   platform_event::{MouseButton, MouseEvent, PressedButtons},
-  Dispatcher, DispatcherExtWindows, Point,
 };
 
 /// Data shared with the window procedure callback.

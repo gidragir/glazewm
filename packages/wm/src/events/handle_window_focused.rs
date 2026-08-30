@@ -88,6 +88,7 @@ pub fn handle_window_focused(
     if let (Ok(workspace_rect), Ok(window_rect)) =
       (workspace.to_rect(), window.to_rect())
     {
+      #[allow(clippy::cast_possible_truncation)]
       let current_offset = workspace.offset_x() as i32;
       let mut new_offset = current_offset;
 
@@ -99,8 +100,8 @@ pub fn handle_window_focused(
         new_offset = (current_offset + delta).max(0);
       }
 
-      if (new_offset as f64 - workspace.offset_x()).abs() > 0.001 {
-        workspace.set_offset_x(new_offset as f64);
+      if (f64::from(new_offset) - workspace.offset_x()).abs() > 0.001 {
+        workspace.set_offset_x(f64::from(new_offset));
         state
           .pending_sync
           .queue_container_to_redraw(workspace.clone());

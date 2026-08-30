@@ -40,6 +40,9 @@ general:
   # - 'false': Only show windows from the currently shown workspaces.
   show_all_in_taskbar: false
 
+  # Width presets for cycling column widths on the infinite horizontal canvas strip.
+  column_width_presets: ['25%', '33.33%', '50%', '66.67%', '75%', '100%']
+
 gaps:
   # Whether to scale the gaps with the DPI of the monitor.
   scale_with_dpi: true
@@ -256,6 +259,10 @@ keybindings:
   # Redraw all windows.
   - commands: ['wm-redraw']
     bindings: ['alt+shift+w']
+
+  # Cycle focused column width presets on horizontal infinite canvas strip.
+  - commands: ['cycle-column-preset']
+    bindings: ['alt+shift+c']
 
   # Launch CMD terminal. Alternatively, use `shell-exec wt` or
   # `shell-exec %ProgramFiles%/Git/git-bash.exe` to start Windows

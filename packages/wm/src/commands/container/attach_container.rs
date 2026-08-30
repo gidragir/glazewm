@@ -40,8 +40,15 @@ pub fn attach_container(
   if let Ok(child) = child.as_tiling_container() {
     let tiling_siblings = child.tiling_siblings().collect::<Vec<_>>();
 
-    if tiling_siblings.is_empty() || target_parent.as_workspace().is_some()
-    {
+    if target_parent.as_workspace().is_some() {
+      if child.tiling_size() <= 0.0 {
+        let default_size = if tiling_siblings.is_empty() { 1.0 } else { 0.5 };
+        child.set_tiling_size(default_size);
+      }
+      return Ok(());
+    }
+
+    if tiling_siblings.is_empty() {
       child.set_tiling_size(1.0);
       return Ok(());
     }

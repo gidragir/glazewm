@@ -26,9 +26,10 @@ use crate::{
     },
     monitor::focus_monitor,
     window::{
-      ignore_window, move_window_in_direction, move_window_to_workspace,
-      resize_window, set_window_position, set_window_size,
-      update_window_state, WindowPositionTarget,
+      cycle_column_preset, ignore_window, move_window_in_direction,
+      move_window_to_workspace, resize_window, set_column_width,
+      set_window_position, set_window_size, update_window_state,
+      WindowPositionTarget,
     },
     workspace::{
       focus_workspace, move_workspace_in_direction,
@@ -762,6 +763,17 @@ impl WindowManager {
       }
       InvokeCommand::WmEnableBindingMode { name } => {
         enable_binding_mode(name, state, config)
+      }
+      InvokeCommand::CycleColumnPreset { presets } => {
+        cycle_column_preset(
+          &subject_container,
+          presets.as_deref(),
+          state,
+          &config.value,
+        )
+      }
+      InvokeCommand::SetColumnWidth { width } => {
+        set_column_width(&subject_container, width, state)
       }
       InvokeCommand::PanViewportLeft { amount } => {
         let delta = amount.unwrap_or(150.0);

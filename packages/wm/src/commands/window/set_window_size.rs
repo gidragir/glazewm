@@ -75,8 +75,12 @@ fn set_tiling_window_length(
 
     #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
     let parent_length = if is_width_resize {
-      parent.to_rect()?.width()
-        - horizontal_gap * window.tiling_siblings().count() as i32
+      if parent.as_workspace().is_some() {
+        parent.to_rect()?.width()
+      } else {
+        parent.to_rect()?.width()
+          - horizontal_gap * window.tiling_siblings().count() as i32
+      }
     } else {
       parent.to_rect()?.height()
         - vertical_gap * window.tiling_siblings().count() as i32

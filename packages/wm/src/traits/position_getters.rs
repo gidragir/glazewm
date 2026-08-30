@@ -58,6 +58,7 @@ macro_rules! impl_position_getters_as_resizable {
           }
         };
 
+        #[allow(clippy::cast_possible_truncation)]
         let offset_x =
           self.workspace().map(|ws| ws.offset_x() as i32).unwrap_or(0);
 

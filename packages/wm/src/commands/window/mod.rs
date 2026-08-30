@@ -1,3 +1,4 @@
+mod cycle_column_preset;
 mod ignore_window;
 mod manage_window;
 mod move_window_in_direction;
@@ -9,6 +10,7 @@ mod set_window_size;
 mod unmanage_window;
 mod update_window_state;
 
+pub use cycle_column_preset::*;
 pub use ignore_window::*;
 pub use manage_window::*;
 pub use move_window_in_direction::*;

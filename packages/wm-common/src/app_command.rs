@@ -256,6 +256,14 @@ pub enum InvokeCommand {
     #[clap(long)]
     name: String,
   },
+  CycleColumnPreset {
+    #[clap(long, num_args = 1..)]
+    presets: Option<Vec<LengthValue>>,
+  },
+  SetColumnWidth {
+    #[clap(long, allow_hyphen_values = true)]
+    width: LengthValue,
+  },
   PanViewportLeft {
     #[clap(long, default_value = "150")]
     amount: Option<f64>,

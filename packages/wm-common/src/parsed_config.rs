@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use wm_platform::{
-  Color, CornerStyle, Key, Keybinding, LengthValue, OpacityValue,
-  RectDelta,
+  Color, CornerStyle, Key, Keybinding, LengthUnit, LengthValue,
+  OpacityValue, RectDelta,
 };
 
 use crate::app_command::InvokeCommand;
@@ -96,6 +96,9 @@ pub struct GeneralConfig {
 
   /// Affects which windows get shown in the native Windows taskbar.
   pub show_all_in_taskbar: bool,
+
+  /// Width presets for cycling column widths in infinite canvas mode.
+  pub column_width_presets: Vec<LengthValue>,
 }
 
 impl Default for GeneralConfig {
@@ -118,6 +121,32 @@ impl Default for GeneralConfig {
         }
       },
       show_all_in_taskbar: false,
+      column_width_presets: vec![
+        LengthValue {
+          amount: 0.25,
+          unit: LengthUnit::Percentage,
+        },
+        LengthValue {
+          amount: 0.333_333_34,
+          unit: LengthUnit::Percentage,
+        },
+        LengthValue {
+          amount: 0.5,
+          unit: LengthUnit::Percentage,
+        },
+        LengthValue {
+          amount: 0.666_666_7,
+          unit: LengthUnit::Percentage,
+        },
+        LengthValue {
+          amount: 0.75,
+          unit: LengthUnit::Percentage,
+        },
+        LengthValue {
+          amount: 1.0,
+          unit: LengthUnit::Percentage,
+        },
+      ],
     }
   }
 }

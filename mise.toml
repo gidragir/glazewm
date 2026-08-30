@@ -1,0 +1,36 @@
+[tasks.check]
+description = "Fast type-check without linking (using x86_64-pc-windows-gnu)"
+run = "cargo check --target x86_64-pc-windows-gnu"
+
+[tasks."check:msvc"]
+description = "Type-check using x86_64-pc-windows-msvc target"
+run = "cargo check --target x86_64-pc-windows-msvc"
+
+[tasks.clippy]
+description = "Run strict pedantic Clippy checks"
+run = "cargo clippy --target x86_64-pc-windows-gnu -- -D warnings"
+
+[tasks.test]
+description = "Run unit tests for platform-independent libraries"
+run = "cargo test -p wm-common --target x86_64-pc-windows-gnu"
+
+[tasks."build:debug"]
+description = "Build debug binary (glazewm.exe) with MSVC target"
+run = "cargo xwin build -p wm --target x86_64-pc-windows-msvc"
+
+[tasks.build]
+description = "Build release binary (glazewm.exe) with MSVC target"
+run = "cargo xwin build --release -p wm --target x86_64-pc-windows-msvc"
+
+[tasks."build:all"]
+description = "Build all workspace release packages (wm, wm-cli, wm-watcher)"
+run = "cargo xwin build --release --target x86_64-pc-windows-msvc"
+
+[tasks.deploy]
+description = "Copy compiled release binaries to Windows VM share (/srv/Shared)"
+run = "cp target/x86_64-pc-windows-msvc/release/glazewm*.exe /srv/Shared/"
+
+[tasks.release]
+description = "Build all packages and deploy to Windows VM share"
+depends = ["build:all"]
+run = "cp target/x86_64-pc-windows-msvc/release/glazewm*.exe /srv/Shared/"

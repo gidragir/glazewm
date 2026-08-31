@@ -1,13 +1,33 @@
-# Usage: ./resources/scripts/package.ps1 -VersionNumber 1.0.0
+# Usage: ./resources/scripts/package.ps1 -VersionNumber 1.0.0 [-EnableUiAccess]
 param(
   [Parameter(Mandatory=$true)]
-  [string]$VersionNumber
+  [string]$VersionNumber,
+  [switch]$EnableUiAccess
 )
 
 function ExitOnError() {
   if ($LASTEXITCODE -ne 0) {
     Exit 1
   }
+}
+
+function HasSigningSecrets() {
+  $secrets = @(
+    "AZ_VAULT_URL",
+    "AZ_CERT_NAME",
+    "AZ_CLIENT_ID",
+    "AZ_CLIENT_SECRET",
+    "AZ_TENANT_ID",
+    "RFC3161_TIMESTAMP_URL"
+  )
+
+  foreach ($secret in $secrets) {
+    $val = [Environment]::GetEnvironmentVariable($secret)
+    if ([string]::IsNullOrWhiteSpace($val)) {
+      return $false
+    }
+  }
+  return $true
 }
 
 function SignFiles() {
@@ -21,21 +41,9 @@ function SignFiles() {
     Return
   }
 
-  $secrets = @(
-    "AZ_VAULT_URL",
-    "AZ_CERT_NAME",
-    "AZ_CLIENT_ID",
-    "AZ_CLIENT_SECRET",
-    "AZ_TENANT_ID",
-    "RFC3161_TIMESTAMP_URL"
-  )
-
-  foreach ($secret in $secrets) {
-    $val = [Environment]::GetEnvironmentVariable($secret)
-    if ([string]::IsNullOrWhiteSpace($val)) {
-      Write-Output "Skipping signing due to missing or empty secret '$secret'."
-      Return
-    }
+  if (!(HasSigningSecrets)) {
+    Write-Output "Skipping signing due to missing or empty Azure Key Vault secrets."
+    Return
   }
 
   Write-Output "Signing $filePaths."
@@ -96,7 +104,12 @@ function BuildExes() {
     if (($sourcePaths | Where-Object { !(Test-Path $_) }).Count -gt 0) {
       Write-Output "Build artifact not found for target '$target'. Building now..."
 
-      cargo build --locked --release --target $target --features ui_access
+      $cargoArgs = @("build", "--locked", "--release", "--target", $target)
+      if ($EnableUiAccess) {
+        $cargoArgs += @("--features", "ui_access")
+      }
+
+      cargo @cargoArgs
       ExitOnError
 
       Write-Output "Build completed successfully for target '$target'."
@@ -175,11 +188,7 @@ function BuildInstallers() {
     -d VERSION_NUMBER="$VersionNumber"
 
   if (Test-Path "./out/unsigned-installer-universal.exe") {
-    $hasSigningSecrets = ![string]::IsNullOrWhiteSpace($ENV:AZ_VAULT_URL) -and
-                         ![string]::IsNullOrWhiteSpace($ENV:AZ_CERT_NAME) -and
-                         ![string]::IsNullOrWhiteSpace($ENV:AZ_CLIENT_ID) -and
-                         ![string]::IsNullOrWhiteSpace($ENV:AZ_CLIENT_SECRET)
-    if ($hasSigningSecrets) {
+    if (HasSigningSecrets) {
       Write-Output "Detaching & reattaching Burn engine for signing"
       wix burn detach "./out/unsigned-installer-universal.exe" -engine "./out/engine.exe"
       SignFiles @("out/engine.exe")
@@ -197,6 +206,11 @@ function BuildInstallers() {
 
 function Package() {
   Write-Output "Packaging with version number: $VersionNumber"
+  Write-Output "UIAccess enabled: $EnableUiAccess"
+
+  if ($EnableUiAccess -and !(HasSigningSecrets)) {
+    Write-Warning "UIAccess is enabled, but Azure code-signing secrets are missing. Unsigned binaries with uiAccess='true' will fail to run on Windows unless signature enforcement is disabled."
+  }
 
   Write-Output "Creating output directory"
   New-Item -ItemType Directory -Force -Path "out"

@@ -10,6 +10,10 @@ on:
         type: string
         description: Version number to use for the build (e.g. `1.0.0` or `v1.0.0`).
         required: false
+      enable_ui_access:
+        type: boolean
+        description: Enable UIAccess in manifest (requires Azure code-signing secrets).
+        default: false
 
 permissions:
   contents: write
@@ -48,6 +52,7 @@ jobs:
     secrets: inherit
     with:
       version_number: ${{ needs.prepare.outputs.version_number }}
+      enable_ui_access: ${{ inputs.enable_ui_access || false }}
 
   release:
     needs: [prepare, package]

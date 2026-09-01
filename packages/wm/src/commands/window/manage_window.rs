@@ -42,6 +42,8 @@ pub fn manage_window(
     config
   ));
 
+  let prev_focused = state.focused_container();
+
   // Set the newly added window as focus descendant. This means the window
   // rules will be run as if the window is focused.
   set_focused_descendant(&window.clone().into(), None);
@@ -66,18 +68,32 @@ pub fn manage_window(
       managed_window: window.to_dto()?,
     });
 
-    // OS focus should be set to the newly added window in case it's not
-    // already focused.
-    state.pending_sync.queue_focus_change();
+    let is_on_displayed_workspace = window
+      .workspace()
+      .and_then(|ws| ws.monitor())
+      .and_then(|m| m.displayed_workspace())
+      .is_some_and(|displayed_ws| {
+        window.workspace().is_some_and(|ws| ws.id() == displayed_ws.id())
+      });
 
-    // Normally, a `PlatformEvent::WindowFocused` event is what triggers
-    // focus effects and workspace reordering to be applied. However, when
-    // a window is first launched, this event can come before the
-    // window is managed, and so we need to force an update here.
-    state.pending_sync.queue_focused_effect_update();
-    state.pending_sync.queue_workspace_to_reorder(
-      window.workspace().context("No workspace.")?,
-    );
+    if is_on_displayed_workspace {
+      // OS focus should be set to the newly added window in case it's not
+      // already focused.
+      state.pending_sync.queue_focus_change();
+
+      // Normally, a `PlatformEvent::WindowFocused` event is what triggers
+      // focus effects and workspace reordering to be applied. However, when
+      // a window is first launched, this event can come before the
+      // window is managed, and so we need to force an update here.
+      state.pending_sync.queue_focused_effect_update();
+      state.pending_sync.queue_workspace_to_reorder(
+        window.workspace().context("No workspace.")?,
+      );
+    } else if let Some(prev_focused) = prev_focused {
+      // If the window was moved to a hidden workspace, restore focus to
+      // the previously focused container.
+      set_focused_descendant(&prev_focused, None);
+    }
 
     // Sibling containers need to be redrawn if the window is tiling.
     state.pending_sync.queue_container_to_redraw(

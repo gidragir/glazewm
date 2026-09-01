@@ -6,9 +6,7 @@ use wm_platform::NativeWindow;
 use crate::{
   commands::{
     container::set_focused_descendant, window::run_window_rules,
-    workspace::focus_workspace,
   },
-  models::WorkspaceTarget,
   traits::{CommonGetters, PositionGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
@@ -48,14 +46,6 @@ pub fn handle_window_focused(
     return Ok(());
   }
 
-  // Focus effect should be updated for any change in focus that shouldn't
-  // be overwritten. The incoming focus event at this point is either:
-  //  1. WM's focus container (window or workspace). This is the desktop
-  //     window in the case of a workspace.
-  //  2. An ignored window.
-  //  3. A window that received manual focus.
-  state.pending_sync.queue_focused_effect_update();
-
   if let Some(window) = found_window {
     let workspace = window.workspace().context("No workspace")?;
 
@@ -63,23 +53,30 @@ pub fn handle_window_focused(
     if focused_container == window.clone().into() {
       state.is_focus_synced = true;
       state.pending_sync.queue_workspace_to_reorder(workspace);
+      state.pending_sync.queue_focused_effect_update();
+      return Ok(());
+    }
+
+    // Check if the window is visible on a currently displayed workspace.
+    // If the window is hidden, minimized, or on an inactive workspace, it is
+    // an unsolicited background focus signal (e.g. from Discord, Telegram, etc.).
+    // We reject the focus shift and restore OS focus back to the user's
+    // active container.
+    let is_on_displayed_workspace = workspace
+      .monitor()
+      .and_then(|m| m.displayed_workspace())
+      .is_some_and(|displayed_ws| displayed_ws.id() == workspace.id());
+
+    if window.display_state() != DisplayState::Shown || !is_on_displayed_workspace {
+      info!("Prevented unsolicited background focus from: {window}");
+      state.pending_sync.queue_focus_change();
       return Ok(());
     }
 
     info!("Window manually focused: {window}");
 
-    // Handle focus events from windows on hidden workspaces. For example,
-    // if Discord is forcefully shown by the OS when it's on a hidden
-    // workspace, switch focus to Discord's workspace.
-    if window.display_state() == DisplayState::Hidden {
-      info!("Focusing off-screen window: {window}");
-
-      focus_workspace(
-        WorkspaceTarget::Name(workspace.config().name),
-        state,
-        config,
-      )?;
-    }
+    // Focus effect should be updated for legitimate focus change.
+    state.pending_sync.queue_focused_effect_update();
 
     // Update the WM's focus state.
     set_focused_descendant(&window.clone().into(), None);
@@ -128,6 +125,9 @@ pub fn handle_window_focused(
     state.emit_event(WmEvent::FocusChanged {
       focused_container: window.to_dto()?,
     });
+  } else {
+    // An unmanaged or desktop window received focus.
+    state.pending_sync.queue_focused_effect_update();
   }
 
   Ok(())
@@ -141,3 +141,4 @@ fn should_override_focus(state: &WmState) -> bool {
 
   has_recent_unmanage && !state.is_focus_synced
 }
+

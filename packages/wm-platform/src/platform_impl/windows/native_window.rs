@@ -28,6 +28,7 @@ use windows::{
         GetWindowThreadProcessId, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST,
         IsIconic, IsWindow, IsWindowVisible, IsZoomed,
         LAYERED_WINDOW_ATTRIBUTES_FLAGS, LWA_ALPHA, LWA_COLORKEY,
+        LockSetForegroundWindow, LSFW_LOCK,
         SET_WINDOW_POS_FLAGS, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE,
         SW_RESTORE, SW_SHOWNA, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED,
         SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOOWNERZORDER,
@@ -305,6 +306,11 @@ impl NativeWindow {
 
     // Set as the foreground window.
     unsafe { SetForegroundWindow(self.hwnd()) }.ok()?;
+
+    // Lock foreground window against unsolicited background focus stealing.
+    unsafe {
+      _ = LockSetForegroundWindow(LSFW_LOCK);
+    }
 
     Ok(())
   }
@@ -768,22 +774,30 @@ pub(crate) fn apply_window_positions(
   let mut hdwp = unsafe { BeginDeferWindowPos(count) }?;
 
   for (window, rect) in positions {
-    hdwp = unsafe {
+    if !window.is_valid() || window.is_minimized().unwrap_or(false) {
+      continue;
+    }
+
+    if let Ok(next_hdwp) = unsafe {
       DeferWindowPos(
         hdwp,
         window.hwnd(),
         HWND_NOTOPMOST,
         rect.x(),
         rect.y(),
-        rect.width(),
-        rect.height(),
+        rect.width().max(1),
+        rect.height().max(1),
         SWP_NOACTIVATE
           | SWP_NOZORDER
           | SWP_NOCOPYBITS
           | SWP_NOSENDCHANGING
           | SWP_FRAMECHANGED,
       )
-    }?;
+    } {
+      hdwp = next_hdwp;
+    } else {
+      let _ = window.set_frame(rect);
+    }
   }
 
   unsafe { EndDeferWindowPos(hdwp) }?;

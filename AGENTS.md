@@ -2,124 +2,169 @@
 
 ## Project Overview
 
-GlazeWM is a tiling window manager for Windows and macOS written in Rust, featuring both traditional tiling and a Niri-inspired infinite horizontal scrolling layout.
+GlazeWM is a high-performance tiling window manager for Windows written in Rust (Edition 2024). It provides dual layout capabilities:
+1. **Traditional Tiling / BSP**: Directional splits, floating, and window grouping inspired by i3/bspwm.
+2. **Infinite Horizontal Canvas (Niri-inspired)**: Horizontal scrolling workspace canvas with vertical column stacks, viewport synchronization (`offset_x`), customizable column width presets, and dedicated consume/expel mechanics.
 
-### Workspace Crates Structure
-
-- **`packages/wm`** (`bin: glazewm`): Core window management logic, layout engine, event handlers, and command execution.
-- **`packages/wm-cli`** (`bin, lib: glazewm`): CLI client for sending commands and querying state over IPC.
-- **`packages/wm-common`** (`lib`): Shared data models, command definitions (`InvokeCommand`), config parser (`ParsedConfig`), and DTOs.
-- **`packages/wm-platform`** (`lib`): Low-level platform API abstractions (Win32 API bindings, `NativeWindow`, display listeners, keyboard/mouse hooks).
-- **`packages/wm-ipc-client`** (`lib`): WebSocket client for IPC communication.
-- **`packages/wm-watcher`** (`bin: glazewm-watcher`): Windows watchdog process for cleanup upon exit.
+The project follows a client-server architecture where the main daemon process manages the container tree and native OS windowing, exposing a non-blocking WebSocket IPC API for CLI interactions and third-party widgets/bars (e.g. Zebar).
 
 ---
 
-## Building the Project
+## Workspace Crates Structure
 
-When developing on Linux for Windows targets, use **`cargo-xwin`** or the provided **`mise`** tasks.
+```
+glazewm/ (workspace root, Rust 2024)
+├── packages/
+│   ├── wm/             # Main daemon executable (glazewm.exe)
+│   ├── wm-cli/         # CLI client binary (glazewm-cli.exe)
+│   ├── wm-common/      # Shared domain types, DTOs, config parser, and commands
+│   ├── wm-platform/    # Low-level OS abstractions (Win32 API bindings, hooks)
+│   ├── wm-ipc-client/  # WebSocket client library for IPC
+│   ├── wm-macros/      # Procedural derive macros (SubEnum, EnumFromInner)
+│   └── wm-watcher/     # Windows watchdog process for crash cleanup
+├── artifacts/          # Architecture design iterations and backlog items
+│   ├── idea/           # Iteration designs 1-7 (Niri layout, presets, consume/expel, multi-monitor isolation)
+│   └── backlog/        # Future feature proposals (e.g. Zebar minimap indicator)
+└── resources/          # Packaging scripts, default configs, and icons
+```
 
-### Quick Commands with Mise
+### Crate Breakdown & Responsibilities
+
+- **`packages/wm`** (`bin: glazewm`):
+  - Central daemon managing state (`WmState`), container hierarchy, and layout computations.
+  - Houses the Win32 message loop on the main OS thread (`EventLoop`), IPC WebSocket server via Tokio, and system tray menu.
+  - Dispatches commands (`commands/`) and handles OS window/display events (`events/`).
+
+- **`packages/wm-cli`** (`bin: glazewm-cli`, `lib: glazewm_cli`):
+  - Command-line interface for controlling GlazeWM from shell or keybindings.
+  - Spawns daemon if not running or connects via `wm-ipc-client` to issue IPC commands and stream events.
+
+- **`packages/wm-common`** (`lib`):
+  - Pure domain models and runtime-agnostic primitives.
+  - Defines `InvokeCommand`, `WmEvent`, `WindowState`, `DisplayState`, `ParsedConfig` (parsed from YAML via `serde_yml`), and all serialization DTOs (`WorkspaceDto`, `WindowDto`, `ContainerDto`).
+  - Contains `offset_x` and layout metrics used across the workspace.
+
+- **`packages/wm-platform`** (`lib`):
+  - Win32 API abstraction layer; encapsulates Windows subsystem interactions (window handles, display enumeration, keyboard/mouse hooks, thread dispatching).
+  - Isolates unsafe Win32 calls behind safe Rust interfaces (`NativeWindow`, `DisplayListener`, `WindowListener`, `KeybindingListener`, `Dispatcher`).
+
+- **`packages/wm-ipc-client`** (`lib`):
+  - Asynchronous WebSocket client (`IpcClient`) for communicating with the running daemon over local TCP port.
+
+- **`packages/wm-macros`** (`proc-macro`):
+  - Custom procedural macros: `#[derive(SubEnum)]` for enum subset mapping and `#[derive(EnumFromInner)]` for boilerplate-free enum conversions.
+
+- **`packages/wm-watcher`** (`bin: glazewm-watcher`):
+  - Independent watchdog process that listens to window states over IPC.
+  - Restores hidden/modified native window properties (borders, taskbar presence, transparency) if the main WM daemon terminates unexpectedly.
+
+---
+
+## Key Modules & File Map
+
+### `packages/wm/src/`
+- `main.rs`: Process entry point, CLI arguments parsing, Tokio runtime setup, and thread spawning.
+- `wm.rs` & `wm_state.rs`: Primary window manager orchestration, state transitions, and pending synchronization queue.
+- `ipc_server.rs`: Tokio WebSocket server handling client IPC queries and event broadcasting.
+- `models/`:
+  - `container.rs` / `weak_container.rs`: `Container` enum wrapping `Rc<RefCell<...>>` node variants and weak parent pointers.
+  - `workspace.rs`: `Workspace` model tracking child containers, focus order, tiling direction, and canvas `offset_x`.
+  - `split_container.rs`: Intermediate branching node for vertical/horizontal splits.
+  - `tiling_window.rs` & `non_tiling_window.rs`: Managed window leaf representations.
+  - `monitor.rs` & `root_container.rs`: Display monitor roots.
+- `commands/`:
+  - `window/`: Window manipulation commands (`manage_window`, `unmanage_window`, `move_window_in_direction`, `move_window_to_workspace`, `cycle_column_preset`, `consume_or_expel_window`, `run_window_rules`, `resize_window`).
+  - `container/`: Container operations (`attach_container`, `detach_container`, `flatten_split_container`, `focus_in_direction`, `move_container_within_tree`, `resize_tiling_container`).
+  - `workspace/`: Workspace switching, activation, sorting (`activate_workspace`, `focus_workspace`, `move_workspace_in_direction`).
+  - `monitor/`: Multi-monitor focus and configuration (`add_monitor`, `focus_monitor`, `sort_monitors`, `update_monitor`).
+  - `general/`: General commands (`cycle_focus`, `reload_config`, `platform_sync`, `shell_exec`, `toggle_pause`).
+- `events/`: Event handlers responding to OS callbacks (`handle_window_focused`, `handle_window_moved_or_resized`, `handle_window_shown`, `handle_window_hidden`, `handle_display_settings_changed`, `handle_mouse_move`).
+
+### `packages/wm-common/src/`
+- `parsed_config.rs`: YAML configuration schema, keybindings, window rules, gap settings, and column width presets.
+- `app_command.rs`: Command line arguments definition (`clap`).
+- `dtos/`: External JSON serialization representations for IPC state queries (`WorkspaceDto`, `WindowDto`, etc.).
+- `ipc.rs`: Request/Response/Subscription messages protocol.
+
+### `packages/wm-platform/src/`
+- `event_loop.rs`: Platform native message pump.
+- `native_window.rs`: Safe wrapper for Win32 `HWND` operations (dimensions, styles, cloaking, placement, batch `DeferWindowPos`).
+- `dispatcher.rs`: Cross-thread action dispatcher to invoke operations on the main UI thread.
+- `window_listener.rs`, `display_listener.rs`, `keybinding_listener.rs`, `mouse_listener.rs`: OS hook listeners.
+
+---
+
+## Core Architectural Concepts & Invariants
+
+### 1. Dual Layout & Infinite Canvas Mechanics
+- **Canvas Orientation**: Infinite horizontal canvas workspaces enforce a horizontal tiling direction at the workspace root, containing vertical `SplitContainer` columns.
+- **Viewport Offset Synchronization**: As focus shifts between columns, `workspace.offset_x` automatically synchronizes to center or bring the focused column within the visible display viewport.
+- **Column Width Presets**: Columns support dynamic width adjustments (`cycle-column-preset`) allowing toggling between predefined ratios (e.g., 1/3, 1/2, 2/3, full width) and custom fractional sizes.
+- **Consume / Expel Operations**: Directional window movement (`Alt+Shift+Left/Right`) is decoupled from column merging to prevent unwanted nesting. Dedicated `consume-or-expel-window-left` and `consume-or-expel-window-right` commands pull neighboring windows into the focused vertical column or expel them back onto the horizontal canvas.
+- **Multi-Monitor Canvas Isolation & Safe Offscreen Parking**: On multi-monitor setups, offscreen windows on infinite canvases are parked at safe virtual coordinates (`SAFE_PARK_X = 50_000, SAFE_PARK_Y = 50_000`) outside all physical screens. Partially visible columns are clamped to their monitor's working area boundaries. This guarantees 0-pixel bleeding onto adjacent monitors while keeping window thumbnails alive in the taskbar and Alt+Tab switcher.
+- **Atomic Batch Positioning (`DeferWindowPos`)**: Window repositioning batches are pre-processed through `calculate_physical_rect` and applied atomically via `BeginDeferWindowPos`/`DeferWindowPos`/`EndDeferWindowPos` with individual fallback to eliminate DWM rendering stutter and cross-monitor tearing.
+
+### 2. Concurrency & Concurrency Boundaries
+- **UI Thread Safety**: Win32 window management APIs must execute on the OS thread running the `EventLoop`.
+- **Channel Bridging**: Background Tokio tasks (handling IPC communication and timer intervals) communicate with the UI loop through non-blocking channels (`tokio::sync::mpsc`) and `wm_platform::Dispatcher`.
+- **Reference Cycle Prevention**: Container tree nodes use `Rc<RefCell<...>>` for child references and `WeakContainer` (weak references) for parent pointers to prevent memory leaks during container detaching and tree flattening.
+
+---
+
+## Building, Linting & Testing
+
+The repository uses **`mise`** for unified development tasks and **`cargo-xwin`** for cross-compiling from Linux to Windows MSVC targets.
+
+### Mise Task Runners
 
 ```bash
-mise run check       # Fast check (x86_64-pc-windows-gnu)
-mise run clippy      # Run strict clippy lints
+mise run check       # Fast type checking (x86_64-pc-windows-gnu)
+mise run clippy      # Run strict clippy lints across all crates
 mise run test        # Run unit tests
 mise run build       # Build release binary (glazewm.exe)
 mise run build:all   # Build all workspace binaries
-mise run deploy      # Copy release binaries to /srv/Shared/
-mise run release     # Build all + deploy to /srv/Shared/ in one command
+mise run deploy      # Copy release binaries to /srv/Shared/ for VM testing
+mise run release     # Build all workspace binaries + deploy to /srv/Shared/
 ```
 
-### Windows Targets (Direct Cargo Commands)
+### Direct Cargo & Cross-Compilation Commands
 
 ```bash
-# Debug build for main application (glazewm.exe)
-cargo xwin build -p wm --target x86_64-pc-windows-msvc
+# Fast check using GNU target (Linux-friendly)
+cargo check --target x86_64-pc-windows-gnu
 
-# Release build for main application
+# Check specific crate
+cargo check -p wm --target x86_64-pc-windows-gnu
+cargo check -p wm-common --target x86_64-pc-windows-gnu
+
+# Build MSVC release binary (main glazewm daemon)
 cargo xwin build --release -p wm --target x86_64-pc-windows-msvc
 
-# Build all packages (wm, wm-cli, wm-watcher)
+# Build all workspace packages with MSVC target
 cargo xwin build --release --target x86_64-pc-windows-msvc
 ```
 
-### Artifact Binary Locations
-
-- Debug binary: `target/x86_64-pc-windows-msvc/debug/glazewm.exe`
-- Release binary: `target/x86_64-pc-windows-msvc/release/glazewm.exe`
-- CLI binary: `target/x86_64-pc-windows-msvc/release/glazewm-cli.exe`
-
-### Deploying / Copying to Windows VM Share (`/srv/Shared`)
-
-To copy compiled binaries to the shared directory accessible by the Windows VM:
-
-```bash
-# Copy all release binaries to VM shared folder
-cp target/x86_64-pc-windows-msvc/release/glazewm*.exe /srv/Shared/
-
-# Or copy specifically the main glazewm executable
-cp target/x86_64-pc-windows-msvc/release/glazewm.exe /srv/Shared/
-```
+### Binary Output Locations & VM Deployment
+- Main WM daemon: `target/x86_64-pc-windows-msvc/release/glazewm.exe`
+- CLI executable: `target/x86_64-pc-windows-msvc/release/glazewm-cli.exe`
+- Watchdog executable: `target/x86_64-pc-windows-msvc/release/glazewm-watcher.exe`
+- Deploy to shared Windows VM mount: `cp target/x86_64-pc-windows-msvc/release/glazewm*.exe /srv/Shared/`
 
 ---
 
-## Checking, Linting & Testing
+## Coding Standards & Conventions
 
-### Fast Compilation & Type Checking
-
-To quickly check for compiler errors and type correctness without linking:
-
-```bash
-# Fast check using x86_64-pc-windows-gnu
-cargo check --target x86_64-pc-windows-gnu
-
-# Fast check for specific crate (e.g. wm-common)
-cargo check -p wm-common --target x86_64-pc-windows-gnu
-
-# Check with MSVC target
-cargo check --target x86_64-pc-windows-msvc
-```
-
-### Clippy & Code Quality Checks
-
-GlazeWM enforces strict pedantic clippy lints (`#![warn(clippy::all, clippy::pedantic)]`):
-
-```bash
-# Run clippy on Windows GNU target
-cargo clippy --target x86_64-pc-windows-gnu
-
-# Run clippy with deny warnings
-cargo clippy --target x86_64-pc-windows-gnu -- -D warnings
-```
-
-### Running Tests
-
-```bash
-# Run tests for platform-independent libraries
-cargo test -p wm-common --target x86_64-pc-windows-gnu
-
-# Check test compilation for wm
-cargo test -p wm --target x86_64-pc-windows-gnu --no-run
-```
-
----
-
-## Coding Standards & Best Practices
-
-1. **Error Handling**:
-   - In `wm-platform`: Use `crate::Error` / `crate::Result` (`thiserror`).
-   - In all other crates (`wm`, `wm-common`, `wm-cli`): Use `anyhow::Result` and add context with `.with_context(|| ...)`.
-   - Never use `.unwrap()` or `.expect()` in production paths.
-
-2. **Logging**:
-   - Use `tracing` macros (`tracing::info!`, `tracing::debug!`, `tracing::warn!`, `tracing::error!`).
-
-3. **Performance & Ownership**:
-   - Prefer passing references (`&T`, `&str`, `&[T]`) over unnecessary `.clone()` calls.
-   - For small `Copy` types (e.g. coordinates, dimensions), pass by value.
-   - Avoid allocations and `.clone()` inside high-frequency loops (e.g. layout passes, window event handling).
-
-4. **Numeric Casts**:
-   - Annotate deliberate float/int casts with `#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]` and keep justifications clear.
-   - Use `f64::from(i32_val)` instead of `i32_val as f64` for lossless conversions.
+1. **Rust Edition 2024**: Codebase adheres to Rust 2024 edition idioms.
+2. **Error Handling**:
+   - `wm-platform`: Use `crate::Error` / `crate::Result` with `thiserror`.
+   - `wm`, `wm-common`, `wm-cli`, `wm-watcher`: Use `anyhow::Result` enriched with context via `.with_context(|| ...)`.
+   - Never use `.unwrap()` or `.expect()` in production code paths.
+3. **Strict Clippy Compliance**:
+   - The workspace enforces `#![warn(clippy::all, clippy::pedantic)]`.
+   - Explicit float/integer casts must be annotated with `#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]` with clear rationale.
+   - Use lossless conversions such as `f64::from(i32_val)` where possible.
+4. **Logging & Diagnostics**:
+   - Use structured `tracing` macros (`tracing::trace!`, `tracing::debug!`, `tracing::info!`, `tracing::warn!`, `tracing::error!`).
+5. **Zero-Cost Abstractions & Allocations**:
+   - Prefer references (`&T`, `&str`, `&[T]`) over unnecessary `.clone()` calls.
+   - Avoid allocations inside high-frequency event passes (window moves, mouse tracking, layout recalculations).

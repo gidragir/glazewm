@@ -281,6 +281,24 @@ keybindings:
   - commands: ['cycle-column-preset']
     bindings: ['alt+shift+c']
 
+  # Focus monitor or workspace in a given direction.
+  - commands: ['focus --workspace-in-direction left']
+    bindings: ['alt+ctrl+h', 'alt+ctrl+left']
+  - commands: ['focus --workspace-in-direction right']
+    bindings: ['alt+ctrl+l', 'alt+ctrl+right']
+
+  # Move focused window to a monitor/workspace in a given direction.
+  - commands: ['move --workspace-in-direction left']
+    bindings: ['alt+ctrl+shift+h', 'alt+ctrl+shift+left']
+  - commands: ['move --workspace-in-direction right']
+    bindings: ['alt+ctrl+shift+l', 'alt+ctrl+shift+right']
+
+  # Focus specific monitor by index (0-indexed).
+  - commands: ['focus --monitor 0']
+    bindings: ['alt+w']
+  - commands: ['focus --monitor 1']
+    bindings: ['alt+e']
+
   # Launch CMD terminal. Alternatively, use `shell-exec wt` or
   # `shell-exec %ProgramFiles%/Git/git-bash.exe` to start Windows
   # Terminal and Git Bash respectively.

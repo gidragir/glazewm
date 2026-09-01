@@ -38,7 +38,7 @@ use windows::{
         ANIMATIONINFO, GetCursorPos, MB_ICONERROR, MB_OK, MB_SYSTEMMODAL,
         MessageBoxW, SPI_GETANIMATION, SPI_SETANIMATION, SPIF_SENDCHANGE,
         SPIF_UPDATEINIFILE, SW_HIDE, SW_NORMAL,
-        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetCursorPos,
+        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
         SystemParametersInfoW,
       },
     },
@@ -628,7 +628,47 @@ impl Dispatcher {
     }
     #[cfg(target_os = "windows")]
     {
-      unsafe { SetCursorPos(point.x, point.y) }?;
+      use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE,
+        MOUSEEVENTF_MOVE, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT,
+      };
+      use windows::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+        SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SetCursorPos,
+      };
+
+      unsafe {
+        let _ = SetCursorPos(point.x, point.y);
+
+        let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let v_width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        let v_height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+        if v_width > 0 && v_height > 0 {
+          let norm_x = ((point.x - vx) * 65535) / v_width;
+          let norm_y = ((point.y - vy) * 65535) / v_height;
+
+          let input = INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+              mi: MOUSEINPUT {
+                dx: norm_x,
+                dy: norm_y,
+                mouseData: 0,
+                dwFlags: MOUSEEVENTF_ABSOLUTE
+                  | MOUSEEVENTF_MOVE
+                  | MOUSEEVENTF_VIRTUALDESK,
+                time: 0,
+                dwExtraInfo: 0,
+              },
+            },
+          };
+
+          #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+          let _ = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+        }
+      }
     }
 
     Ok(())

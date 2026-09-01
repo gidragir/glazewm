@@ -1,0 +1,12 @@
+## Required Codebase Context
+- **Win32 Platform Message Pump**:
+  - `packages/wm-platform/src/platform_impl/windows/event_loop.rs`: `EventLoop::run` initialization and hook installation.
+  - `packages/wm-platform/src/platform_impl/windows/native_window.rs`: `NativeWindow::focus` invocation and `LockSetForegroundWindow` bindings.
+- **WM Focus & Event Handlers**:
+  - `packages/wm/src/events/handle_window_focused.rs`: Filtering of `WindowEvent::Focused`, suppression of `focus_workspace`, and re-asserting focus via `state.pending_sync.queue_focus_change()`.
+  - `packages/wm/src/commands/window/manage_window.rs`: New window creation focus guards and displayed workspace verification.
+- **Container Tree & State Models**:
+  - `packages/wm/src/wm_state.rs`: `focused_container`, `is_focus_synced`, and `pending_sync` dispatch queues.
+  - `packages/wm/src/models/workspace.rs` & `monitor.rs`: `displayed_workspace()` evaluation across multi-monitor setups.
+- **Verification Infrastructure**:
+  - `mise.toml`: `[tasks.verify]` task running check, clippy, and unit test suites across cross-compilation targets.

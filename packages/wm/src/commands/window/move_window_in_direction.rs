@@ -3,17 +3,12 @@ use wm_common::{TilingDirection, WindowState};
 use wm_platform::{Direction, Rect};
 
 use crate::{
-  commands::container::{
-    flatten_split_container, move_container_within_tree,
-    set_focused_descendant,
-  },
+  commands::container::{flatten_split_container, move_container_within_tree},
   models::{
     DirectionContainer, Monitor, NonTilingWindow, TilingContainer,
     TilingWindow, WindowContainer,
   },
-  traits::{
-    CommonGetters, PositionGetters, TilingDirectionGetters, WindowGetters,
-  },
+  traits::{CommonGetters, TilingDirectionGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
 };
@@ -32,16 +27,10 @@ pub fn move_window_in_direction(
       move_tiling_window(window, direction, state)
     }
     WindowContainer::NonTilingWindow(non_tiling_window) => {
-      match non_tiling_window.state() {
-        WindowState::Floating(_) => {
-          move_floating_window(non_tiling_window, direction, state)
-        }
-        WindowState::Fullscreen(_) => move_to_workspace_in_direction(
-          &non_tiling_window.into(),
-          direction,
-          state,
-        ),
-        _ => Ok(()),
+      if matches!(non_tiling_window.state(), WindowState::Floating(_)) {
+        move_floating_window(non_tiling_window, direction, state)
+      } else {
+        Ok(())
       }
     }
   }
@@ -81,16 +70,12 @@ fn move_tiling_window(
     );
   }
 
-  // Attempt to move the window to workspace in given direction.
+  // If at the edge of the workspace canvas, keep window in place.
   if (has_matching_tiling_direction
     || window_to_move.tiling_siblings().count() == 0)
     && parent.is_workspace()
   {
-    return move_to_workspace_in_direction(
-      &window_to_move.into(),
-      direction,
-      state,
-    );
+    return Ok(());
   }
 
   // The window cannot be moved within the parent container, so traverse
@@ -150,76 +135,6 @@ fn move_to_sibling_container(
     .pending_sync
     .queue_container_to_redraw(target_sibling)
     .queue_container_to_redraw(window_to_move);
-
-  Ok(())
-}
-
-fn move_to_workspace_in_direction(
-  window_to_move: &WindowContainer,
-  direction: &Direction,
-  state: &mut WmState,
-) -> anyhow::Result<()> {
-  let parent = window_to_move.parent().context("No parent.")?;
-  let workspace = window_to_move.workspace().context("No workspace.")?;
-  let monitor = parent.monitor().context("No monitor.")?;
-
-  let target_workspace = state
-    .monitor_in_direction(&monitor, direction)?
-    .and_then(|monitor| monitor.displayed_workspace());
-
-  if let Some(target_workspace) = target_workspace {
-    // Since the window is crossing monitors, adjustments might need to be
-    // made because of DPI.
-    if monitor.has_dpi_difference(&target_workspace.clone().into())? {
-      window_to_move.set_has_pending_dpi_adjustment(true);
-    }
-
-    // Update floating placement since the window has to cross monitors.
-    window_to_move.set_floating_placement(
-      window_to_move
-        .floating_placement()
-        .translate_to_center(&target_workspace.to_rect()?),
-    );
-
-    if let WindowContainer::NonTilingWindow(window_to_move) =
-      &window_to_move
-    {
-      window_to_move.set_insertion_target(None);
-    }
-
-    let target_index = match direction {
-      Direction::Down | Direction::Right => 0,
-      _ => target_workspace.child_count(),
-    };
-
-    // Focus should be reassigned within the original workspace after the
-    // window is moved out. For example, if the focus order is 1. tiling
-    // window and 2. fullscreen window, then we'd want to retain focus on a
-    // tiling window on move.
-    let focus_target = state.focus_target_after_removal(window_to_move);
-
-    move_container_within_tree(
-      &window_to_move.clone().into(),
-      &target_workspace.clone().into(),
-      target_index,
-      state,
-    )?;
-
-    if let Some(focus_target) = focus_target {
-      set_focused_descendant(
-        &focus_target,
-        Some(&workspace.clone().into()),
-      );
-    }
-
-    state
-      .pending_sync
-      .queue_container_to_redraw(window_to_move.clone())
-      .queue_containers_to_redraw(target_workspace.tiling_children())
-      .queue_containers_to_redraw(parent.tiling_children())
-      .queue_cursor_jump()
-      .queue_workspace_to_reorder(target_workspace);
-  }
 
   Ok(())
 }

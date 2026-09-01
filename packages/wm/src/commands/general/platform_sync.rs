@@ -25,7 +25,7 @@ pub fn platform_sync(
   let focused_container =
     state.focused_container().context("No focused container.")?;
 
-  _ = auto_pan_viewport(&focused_container, state, config);
+  _ = auto_pan_all_viewports(state, config);
 
   if state.pending_sync.needs_focus_update() {
     sync_focus(&focused_container, state)?;
@@ -40,7 +40,7 @@ pub fn platform_sync(
   if state.pending_sync.needs_cursor_jump()
     && config.value.general.cursor_jump.enabled
   {
-    jump_cursor(focused_container.clone(), state, config)?;
+    jump_cursor(&focused_container, state, config)?;
   }
 
   if state.pending_sync.needs_focused_effect_update()
@@ -229,8 +229,12 @@ fn redraw_containers(
         && let Ok(rect) = window.to_rect()
         && let Ok(delta) = window.total_border_delta()
       {
-        batch_positions
-          .push((window.native().clone(), rect.apply_delta(&delta, None)));
+        let rect_with_delta = rect.apply_delta(&delta, None);
+        if let Ok(physical_rect) =
+          calculate_physical_rect(window, &rect_with_delta, true)
+        {
+          batch_positions.push((window.native().clone(), physical_rect));
+        }
       }
     }
 
@@ -417,11 +421,13 @@ fn reposition_window(
     return Ok(());
   }
 
+  let physical_rect = calculate_physical_rect(window, &rect, is_visible)?;
+
   if window.active_drag().is_some() {
-    window.native().resize(rect.width(), rect.height())?;
+    window.native().resize(physical_rect.width(), physical_rect.height())?;
   } else {
     #[cfg(target_os = "macos")]
-    window.native().set_frame(&rect)?;
+    window.native().set_frame(&physical_rect)?;
 
     #[cfg(target_os = "windows")]
     {
@@ -451,7 +457,7 @@ fn reposition_window(
       if should_restore {
         // Restoring to position has the same effect as `ShowWindow` with
         // `SW_RESTORE`, but doesn't cause a flicker.
-        window.native().restore(Some(&rect))?;
+        window.native().restore(Some(&physical_rect))?;
       }
 
       let mut swp_flags = SWP_NOACTIVATE
@@ -473,19 +479,19 @@ fn reposition_window(
             window.native().maximize()?;
           }
 
-          window.native().set_window_pos(z_order, &rect, swp_flags)?;
+          window.native().set_window_pos(z_order, &physical_rect, swp_flags)?;
         }
         _ => {
           swp_flags |= SWP_FRAMECHANGED;
 
-          window.native().set_window_pos(z_order, &rect, swp_flags)?;
+          window.native().set_window_pos(z_order, &physical_rect, swp_flags)?;
 
           // When there's a mismatch between the DPI of the monitor and the
           // window, the window might be sized incorrectly after the first
           // move. If we set the position twice, inconsistencies after the
           // first move are resolved.
           if window.has_pending_dpi_adjustment() {
-            window.native().set_window_pos(z_order, &rect, swp_flags)?;
+            window.native().set_window_pos(z_order, &physical_rect, swp_flags)?;
           }
         }
       }
@@ -504,34 +510,110 @@ fn reposition_window(
   Ok(())
 }
 
+fn calculate_physical_rect(
+  window: &WindowContainer,
+  rect: &Rect,
+  is_visible: bool,
+) -> anyhow::Result<Rect> {
+  let monitor = window.monitor().context("No monitor.")?;
+  let monitor_rect = monitor.native_properties().working_area;
+
+  if is_visible && matches!(window, WindowContainer::TilingWindow(_)) {
+    if rect.right <= monitor_rect.left || rect.left >= monitor_rect.right {
+      // Completely offscreen relative to parent monitor.
+      // Park at safe virtual desktop coordinates far outside all monitors,
+      // keeping original dimensions so taskbar and Alt+Tab remain functional.
+      const SAFE_PARK_X: i32 = 50_000;
+      const SAFE_PARK_Y: i32 = 50_000;
+      Ok(Rect::from_xy(
+        SAFE_PARK_X,
+        SAFE_PARK_Y,
+        rect.width(),
+        rect.height(),
+      ))
+    } else if rect.left < monitor_rect.left && rect.right <= monitor_rect.right {
+      // Partially visible on the left edge of monitor. Clamp to monitor left bound.
+      let visible_width = (rect.right - monitor_rect.left).max(1);
+      Ok(Rect::from_xy(
+        monitor_rect.left,
+        rect.y(),
+        visible_width,
+        rect.height(),
+      ))
+    } else if rect.left >= monitor_rect.left && rect.right > monitor_rect.right {
+      // Partially visible on the right edge of monitor. Clamp to monitor right bound.
+      let visible_width = (monitor_rect.right - rect.left).max(1);
+      Ok(Rect::from_xy(
+        rect.left,
+        rect.y(),
+        visible_width,
+        rect.height(),
+      ))
+    } else if rect.left < monitor_rect.left && rect.right > monitor_rect.right {
+      // Wider than monitor working area.
+      Ok(Rect::from_xy(
+        monitor_rect.left,
+        rect.y(),
+        monitor_rect.width(),
+        rect.height(),
+      ))
+    } else {
+      Ok(rect.clone())
+    }
+  } else {
+    Ok(rect.clone())
+  }
+}
+
 fn jump_cursor(
-  focused_container: Container,
+  focused_container: &Container,
   state: &WmState,
   config: &UserConfig,
 ) -> anyhow::Result<()> {
   let cursor_jump = &config.value.general.cursor_jump;
 
-  let jump_target = match cursor_jump.trigger {
-    CursorJumpTrigger::WindowFocus => Some(focused_container),
-    CursorJumpTrigger::MonitorFocus => {
-      let target_monitor =
-        focused_container.monitor().context("No monitor.")?;
+  let target_monitor = focused_container.monitor().context("No monitor.")?;
+  let monitor_rect = target_monitor.native_properties().working_area;
+  let cursor_pos = state.dispatcher.cursor_position().ok();
 
-      let cursor_monitor = state
-        .dispatcher
-        .cursor_position()
-        .ok()
-        .and_then(|pos| state.monitor_at_point(&pos));
+  let should_jump = match cursor_jump.trigger {
+    CursorJumpTrigger::WindowFocus => true,
+    CursorJumpTrigger::MonitorFocus => {
+      let cursor_monitor =
+        cursor_pos.as_ref().and_then(|pos| state.monitor_at_point(pos));
 
       // Jump to the target monitor if the cursor is not already on it.
       cursor_monitor
-        .filter(|monitor| monitor.id() != target_monitor.id())
-        .map(|_| target_monitor.into())
+        .is_none_or(|monitor| monitor.id() != target_monitor.id())
     }
   };
 
-  if let Some(jump_target) = jump_target {
-    let center = jump_target.to_rect()?.center_point();
+  if should_jump {
+    let center = if let Ok(window) = focused_container.as_window_container() {
+      if let Ok(rect) = window.to_rect()
+        && let Ok(physical_rect) =
+          calculate_physical_rect(&window, &rect, true)
+      {
+        if physical_rect.left >= 40_000 || physical_rect.top >= 40_000 {
+          monitor_rect.center_point()
+        } else {
+          wm_platform::Point {
+            x: physical_rect
+              .center_point()
+              .x
+              .clamp(monitor_rect.left, monitor_rect.right.saturating_sub(1)),
+            y: physical_rect
+              .center_point()
+              .y
+              .clamp(monitor_rect.top, monitor_rect.bottom.saturating_sub(1)),
+          }
+        }
+      } else {
+        monitor_rect.center_point()
+      }
+    } else {
+      monitor_rect.center_point()
+    };
 
     if let Err(err) = state.dispatcher.set_cursor_position(&center) {
       tracing::warn!("Failed to set cursor position: {}", err);
@@ -689,10 +771,10 @@ pub fn animate_pan_workspace(
         if let Ok(rect) = win.to_rect()
           && let Ok(border_delta) = win.total_border_delta()
         {
-          step_positions.push((
-            win.native().clone(),
-            rect.apply_delta(&border_delta, None),
-          ));
+          let unconstrained_rect = rect.apply_delta(&border_delta, None);
+          let physical_rect = calculate_physical_rect(win, &unconstrained_rect, true)
+            .unwrap_or(unconstrained_rect);
+          step_positions.push((win.native().clone(), physical_rect));
         }
       }
 
@@ -707,38 +789,87 @@ pub fn animate_pan_workspace(
   workspace.set_offset_x(target_offset);
 }
 
-fn auto_pan_viewport(
-  focused_container: &Container,
+fn auto_pan_all_viewports(
   state: &mut WmState,
   config: &UserConfig,
 ) -> anyhow::Result<()> {
-  let Ok(window) = focused_container.as_window_container() else {
-    return Ok(());
-  };
+  let displayed_workspaces: Vec<Workspace> = state
+    .monitors()
+    .into_iter()
+    .filter_map(|m| m.displayed_workspace())
+    .collect();
 
-  let Some(workspace) = window.workspace() else {
-    return Ok(());
-  };
+  for workspace in displayed_workspaces {
+    auto_pan_workspace_viewport(&workspace, state, config)?;
+  }
 
+  Ok(())
+}
+
+fn auto_pan_workspace_viewport(
+  workspace: &Workspace,
+  state: &mut WmState,
+  config: &UserConfig,
+) -> anyhow::Result<()> {
   let workspace_rect = workspace.to_rect()?;
-  let window_rect = window.to_rect()?;
+
+  let tiling_children: Vec<crate::models::TilingContainer> =
+    workspace.tiling_children().collect();
+
+  if tiling_children.is_empty() {
+    if workspace.offset_x().abs() > 0.001 {
+      workspace.set_offset_x(0.0);
+      state
+        .pending_sync
+        .queue_container_to_redraw(workspace.clone());
+    }
+    return Ok(());
+  }
 
   #[allow(clippy::cast_possible_truncation)]
   let current_offset = workspace.offset_x() as i32;
-  let mut new_offset = current_offset;
 
-  if window_rect.left < workspace_rect.left {
-    let delta = window_rect.left - workspace_rect.left;
-    new_offset = (current_offset + delta).max(0);
-  } else if window_rect.right > workspace_rect.right {
-    let delta = window_rect.right - workspace_rect.right;
-    new_offset = (current_offset + delta).max(0);
+  // Find rightmost tiling child to compute total content span from workspace.left.
+  let last_child_rect = tiling_children
+    .last()
+    .context("No tiling child.")?
+    .to_rect()?;
+
+  let total_content_span =
+    (last_child_rect.right + current_offset - workspace_rect.left).max(0);
+
+  #[allow(clippy::cast_precision_loss)]
+  let max_offset =
+    f64::from((total_content_span - workspace_rect.width()).max(0));
+
+  // Find the focused window or container in this workspace.
+  let focused_container = workspace
+    .descendant_focus_order()
+    .find(|c| c.as_window_container().is_ok())
+    .or_else(|| tiling_children.first().map(|c| c.clone().into()));
+
+  let mut new_offset = workspace.offset_x();
+
+  if let Some(focused) = focused_container
+    && let Ok(focused_rect) = focused.to_rect()
+  {
+    if focused_rect.left < workspace_rect.left {
+      let delta = focused_rect.left - workspace_rect.left;
+      new_offset = f64::from((current_offset + delta).max(0));
+    } else if focused_rect.right > workspace_rect.right {
+      let delta = focused_rect.right - workspace_rect.right;
+      new_offset = f64::from((current_offset + delta).max(0));
+    }
   }
 
-  let target_offset = f64::from(new_offset);
-  if (target_offset - workspace.offset_x()).abs() > 0.001 {
-    animate_pan_workspace(&workspace, target_offset, config);
-    state.pending_sync.queue_container_to_redraw(workspace);
+  // Clamp new_offset within [0.0, max_offset]
+  new_offset = new_offset.clamp(0.0, max_offset);
+
+  if (new_offset - workspace.offset_x()).abs() > 0.001 {
+    animate_pan_workspace(workspace, new_offset, config);
+    state
+      .pending_sync
+      .queue_container_to_redraw(workspace.clone());
   }
 
   Ok(())

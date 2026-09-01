@@ -17,15 +17,20 @@ pub fn flatten_split_container(
 ) -> anyhow::Result<()> {
   let parent = split_container.parent().context("No parent.")?;
 
+  let single_child = split_container.child_count() == 1;
+
   let updated_children =
     split_container.children().into_iter().inspect(|child| {
       child.set_parent(Some(&parent));
 
       // Resize tiling children to fit the size of the split container.
       if let Ok(tiling_child) = child.as_tiling_container() {
-        tiling_child.set_tiling_size(
-          split_container.tiling_size() * tiling_child.tiling_size(),
-        );
+        let new_size = if single_child {
+          split_container.tiling_size()
+        } else {
+          split_container.tiling_size() * tiling_child.tiling_size()
+        };
+        tiling_child.set_tiling_size(new_size);
       }
     });
 

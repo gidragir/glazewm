@@ -16,26 +16,16 @@ pub fn focus_in_direction(
 ) -> anyhow::Result<()> {
   let focus_target = match origin_container {
     Container::TilingWindow(_) => {
-      // If a suitable focus target isn't found in the current workspace,
-      // attempt to find a workspace in the given direction.
-      tiling_focus_target(origin_container, direction)?.map_or_else(
-        || workspace_focus_target(origin_container, direction, state),
-        |container| Ok(Some(container)),
-      )?
+      // In infinite horizontal canvas workspaces, directional focus stays
+      // strictly within the current workspace and does not jump across monitors.
+      tiling_focus_target(origin_container, direction)?
     }
     Container::NonTilingWindow(non_tiling_window) => {
-      match non_tiling_window.state() {
-        WindowState::Floating(_) => {
-          floating_focus_target(origin_container, direction)
-        }
-        WindowState::Fullscreen(_) => {
-          workspace_focus_target(origin_container, direction, state)?
-        }
-        _ => None,
+      if matches!(non_tiling_window.state(), WindowState::Floating(_)) {
+        floating_focus_target(origin_container, direction)
+      } else {
+        None
       }
-    }
-    Container::Workspace(_) => {
-      workspace_focus_target(origin_container, direction, state)?
     }
     _ => None,
   };
@@ -127,42 +117,3 @@ fn tiling_focus_target(
   Ok(None)
 }
 
-/// Gets a focus target outside of the current workspace in the given
-/// direction.
-///
-/// This will descend into the workspace in the given direction, and will
-/// always return a tiling container. This makes it different from the
-/// `focus_workspace` command with `FocusWorkspaceTarget::Direction`.
-fn workspace_focus_target(
-  origin_container: &Container,
-  direction: &Direction,
-  state: &WmState,
-) -> anyhow::Result<Option<Container>> {
-  let monitor = origin_container.monitor().context("No monitor.")?;
-
-  let target_workspace = state
-    .monitor_in_direction(&monitor, direction)?
-    .and_then(|monitor| monitor.displayed_workspace());
-
-  let focused_fullscreen = target_workspace
-    .as_ref()
-    .and_then(|workspace| workspace.descendant_focus_order().next())
-    .filter(|focused| match focused {
-      Container::NonTilingWindow(window) => {
-        matches!(window.state(), WindowState::Fullscreen(_))
-      }
-      _ => false,
-    });
-
-  let focus_target = focused_fullscreen
-    .or_else(|| {
-      target_workspace.as_ref().and_then(|workspace| {
-        workspace
-          .descendant_in_direction(&direction.inverse())
-          .map(Into::into)
-      })
-    })
-    .or(target_workspace.map(Into::into));
-
-  Ok(focus_target)
-}

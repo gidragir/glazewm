@@ -104,8 +104,8 @@ pub trait CommonGetters {
   }
 
   fn self_and_descendants(&self) -> Descendants {
-    let mut stack = self.children();
-    stack.push_front(self.as_container());
+    let mut stack = VecDeque::new();
+    stack.push_back(self.as_container());
     Descendants { stack }
   }
 

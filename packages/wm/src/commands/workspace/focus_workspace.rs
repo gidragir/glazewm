@@ -91,3 +91,129 @@ pub fn focus_workspace(
 
   Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+  use wm_common::TilingDirection;
+  use wm_platform::{Direction, Rect};
+
+  use super::*;
+  use crate::{
+    commands::container::attach_container,
+    models::{Monitor, TilingWindow, Workspace},
+  };
+
+  #[test]
+  fn test_focus_workspace_in_direction_on_multi_monitor() {
+    let mut state = WmState::mock();
+    let config = UserConfig::mock();
+
+    let win1 = TilingWindow::mock().call();
+    let ws1 = Workspace::mock()
+      .name("1".to_string())
+      .tiling_direction(TilingDirection::Horizontal)
+      .tiling_containers(vec![win1.clone().into()])
+      .call();
+
+    let mon1 = Monitor::mock()
+      .bounds(Rect::from_xy(0, 0, 1920, 1080))
+      .working_area(Rect::from_xy(0, 0, 1920, 1080))
+      .workspaces(vec![ws1.clone()])
+      .call();
+
+    let win2 = TilingWindow::mock().call();
+    let ws2 = Workspace::mock()
+      .name("2".to_string())
+      .tiling_direction(TilingDirection::Horizontal)
+      .tiling_containers(vec![win2.clone().into()])
+      .call();
+
+    let mon2 = Monitor::mock()
+      .bounds(Rect::from_xy(1920, 0, 1920, 1080))
+      .working_area(Rect::from_xy(1920, 0, 1920, 1080))
+      .workspaces(vec![ws2.clone()])
+      .call();
+
+    attach_container(
+      &mon1.clone().into(),
+      &state.root_container.clone().into(),
+      None,
+    )
+    .unwrap();
+    attach_container(
+      &mon2.clone().into(),
+      &state.root_container.clone().into(),
+      None,
+    )
+    .unwrap();
+
+    set_focused_descendant(&win1.clone().into(), None);
+    assert_eq!(state.focused_container().unwrap().id(), win1.id());
+
+    // Focus workspace to the Right (should focus ws2/win2 on monitor 2)
+    focus_workspace(
+      WorkspaceTarget::Direction(Direction::Right),
+      &mut state,
+      &config,
+    )
+    .unwrap();
+
+    assert_eq!(state.focused_container().unwrap().id(), win2.id());
+    assert!(state.pending_sync.needs_cursor_jump());
+    assert!(state.pending_sync.needs_focus_update());
+  }
+
+  #[test]
+  fn test_focus_monitor_index() {
+    let mut state = WmState::mock();
+    let config = UserConfig::mock();
+
+    let win1 = TilingWindow::mock().call();
+    let ws1 = Workspace::mock()
+      .name("1".to_string())
+      .tiling_direction(TilingDirection::Horizontal)
+      .tiling_containers(vec![win1.clone().into()])
+      .call();
+
+    let mon1 = Monitor::mock()
+      .bounds(Rect::from_xy(0, 0, 1920, 1080))
+      .working_area(Rect::from_xy(0, 0, 1920, 1080))
+      .workspaces(vec![ws1.clone()])
+      .call();
+
+    let win2 = TilingWindow::mock().call();
+    let ws2 = Workspace::mock()
+      .name("2".to_string())
+      .tiling_direction(TilingDirection::Horizontal)
+      .tiling_containers(vec![win2.clone().into()])
+      .call();
+
+    let mon2 = Monitor::mock()
+      .bounds(Rect::from_xy(1920, 0, 1920, 1080))
+      .working_area(Rect::from_xy(1920, 0, 1920, 1080))
+      .workspaces(vec![ws2.clone()])
+      .call();
+
+    attach_container(
+      &mon1.clone().into(),
+      &state.root_container.clone().into(),
+      None,
+    )
+    .unwrap();
+    attach_container(
+      &mon2.clone().into(),
+      &state.root_container.clone().into(),
+      None,
+    )
+    .unwrap();
+
+    set_focused_descendant(&win1.clone().into(), None);
+
+    // Focus monitor index 1 (mon2)
+    crate::commands::monitor::focus_monitor(1, &mut state, &config)
+      .unwrap();
+
+    assert_eq!(state.focused_container().unwrap().id(), win2.id());
+    assert!(state.pending_sync.needs_cursor_jump());
+  }
+}

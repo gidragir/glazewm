@@ -73,9 +73,6 @@ pub fn move_window_to_workspace(
       window.set_insertion_target(None);
     }
 
-    // Focus target is `None` if the window is not focused.
-    let focus_target = state.focus_target_after_removal(&window);
-
     let focus_reset_target = if target_workspace.is_displayed() {
       None
     } else {
@@ -121,11 +118,9 @@ pub fn move_window_to_workspace(
       );
     }
 
-    // Retain focus within the workspace from where the window was moved.
-    if let Some(focus_target) = focus_target {
-      set_focused_descendant(&focus_target, None);
-      state.pending_sync.queue_focus_change();
-    }
+    // Follow focus to the moved window on the target workspace/monitor.
+    set_focused_descendant(&window.clone().into(), None);
+    state.pending_sync.queue_focus_change().queue_cursor_jump();
 
     match window {
       WindowContainer::NonTilingWindow(_) => {
@@ -145,4 +140,77 @@ pub fn move_window_to_workspace(
   }
 
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use wm_common::TilingDirection;
+  use wm_platform::{Direction, Rect};
+
+  use super::*;
+  use crate::{
+    commands::container::attach_container,
+    models::{Monitor, TilingWindow, Workspace},
+  };
+
+  #[test]
+  fn test_move_window_in_direction_to_another_monitor() {
+    let mut state = WmState::mock();
+    let config = UserConfig::mock();
+
+    let win1 = TilingWindow::mock().call();
+    let ws1 = Workspace::mock()
+      .name("1".to_string())
+      .tiling_direction(TilingDirection::Horizontal)
+      .tiling_containers(vec![win1.clone().into()])
+      .call();
+
+    let mon1 = Monitor::mock()
+      .bounds(Rect::from_xy(0, 0, 1920, 1080))
+      .working_area(Rect::from_xy(0, 0, 1920, 1080))
+      .workspaces(vec![ws1.clone()])
+      .call();
+
+    let win2 = TilingWindow::mock().call();
+    let ws2 = Workspace::mock()
+      .name("2".to_string())
+      .tiling_direction(TilingDirection::Horizontal)
+      .tiling_containers(vec![win2.clone().into()])
+      .call();
+
+    let mon2 = Monitor::mock()
+      .bounds(Rect::from_xy(1920, 0, 1920, 1080))
+      .working_area(Rect::from_xy(1920, 0, 1920, 1080))
+      .workspaces(vec![ws2.clone()])
+      .call();
+
+    attach_container(
+      &mon1.clone().into(),
+      &state.root_container.clone().into(),
+      None,
+    )
+    .unwrap();
+    attach_container(
+      &mon2.clone().into(),
+      &state.root_container.clone().into(),
+      None,
+    )
+    .unwrap();
+
+    set_focused_descendant(&win1.clone().into(), None);
+
+    // Move win1 to monitor on the right
+    move_window_to_workspace(
+      win1.clone().into(),
+      WorkspaceTarget::Direction(Direction::Right),
+      &mut state,
+      &config,
+    )
+    .unwrap();
+
+    // win1 should now be in ws2 and still retain focused state
+    assert_eq!(win1.workspace().unwrap().id(), ws2.id());
+    assert_eq!(state.focused_container().unwrap().id(), win1.id());
+    assert!(state.pending_sync.needs_cursor_jump());
+  }
 }

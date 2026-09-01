@@ -504,16 +504,14 @@ fn update_drag_state(
       if let Some(split_parent) = parent.as_split()
         && split_parent.child_count() == 1
       {
+        let root_parent = split_parent.parent();
         flatten_split_container(split_parent.clone())?;
 
-        // Hacky fix to redraw siblings after flattening. The parent is
-        // queued for redraw from the state change, which gets detached
-        // on flatten.
-        // TODO: Change `queue_containers_to_redraw` to iterate over its
-        // descendant windows and store those instead.
-        state
-          .pending_sync
-          .queue_containers_to_redraw(window.tiling_siblings());
+        if let Some(root_parent) = root_parent {
+          state
+            .pending_sync
+            .queue_container_to_redraw(root_parent);
+        }
       }
     }
   }

@@ -57,6 +57,10 @@ pub struct WmState {
   /// Configs of currently enabled binding modes.
   pub binding_modes: Vec<BindingModeConfig>,
 
+  /// Active pan animation tasks keyed by workspace ID.
+  /// Used to dynamically redirect or cancel in-flight animations without frame jitter.
+  pub active_pan_animations: std::collections::HashMap<Uuid, tokio::task::AbortHandle>,
+
   /// Windows that the WM should ignore. Windows can be added via the
   /// `ignore` command.
   pub ignored_windows: Vec<NativeWindow>,
@@ -91,6 +95,7 @@ impl WmState {
       recent_workspace_name: None,
       unmanaged_or_minimized_timestamp: None,
       binding_modes: Vec::new(),
+      active_pan_animations: std::collections::HashMap::new(),
       ignored_windows: Vec::new(),
       is_paused: false,
       is_focus_synced: false,

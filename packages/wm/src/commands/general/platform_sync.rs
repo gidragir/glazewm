@@ -51,7 +51,7 @@ pub fn platform_sync(
     let prev_effects_window = state.prev_effects_window.clone();
 
     if let Ok(window) = focused_container.as_window_container() {
-      apply_window_effects(&window, true, config);
+      apply_window_effects(&window, true, config, &state.dispatcher);
       state.prev_effects_window = Some(window.clone());
     } else {
       state.prev_effects_window = None;
@@ -71,7 +71,7 @@ pub fn platform_sync(
       .filter(|window| window.id() != focused_container.id());
 
     for window in unfocused_windows {
-      apply_window_effects(&window, false, config);
+      apply_window_effects(&window, false, config, &state.dispatcher);
     }
   }
 
@@ -211,8 +211,7 @@ fn redraw_containers(
 
   #[cfg(target_os = "windows")]
   {
-    let mut batch_positions: Vec<(wm_platform::NativeWindow, Rect)> =
-      Vec::new();
+    state.pending_sync.batch_positions_scratch.clear();
     for window in &windows_to_update {
       if !windows_to_redraw.contains(window) {
         continue;
@@ -233,14 +232,17 @@ fn redraw_containers(
         if let Ok(physical_rect) =
           calculate_physical_rect(window, &rect_with_delta, true)
         {
-          batch_positions.push((window.native().clone(), physical_rect));
+          state
+            .pending_sync
+            .batch_positions_scratch
+            .push((window.native().clone(), physical_rect));
         }
       }
     }
 
-    if !batch_positions.is_empty()
+    if !state.pending_sync.batch_positions_scratch.is_empty()
       && let Err(err) =
-        wm_platform::apply_window_positions(&batch_positions)
+        wm_platform::apply_window_positions(&state.pending_sync.batch_positions_scratch)
     {
       tracing::warn!("Failed to batch apply window positions: {}", err);
     }
@@ -296,6 +298,19 @@ fn redraw_containers(
 
       if let Err(err) = window.native().set_z_order(&z_order) {
         tracing::warn!("Failed to set window z-order: {}", err);
+      }
+
+      #[cfg(target_os = "windows")]
+      {
+        let native = window.native().clone();
+        let z_order = z_order.clone();
+        let dispatcher = state.dispatcher.clone();
+        tokio::task::spawn(async move {
+          tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+          _ = dispatcher.dispatch_async(move || {
+            _ = native.set_z_order(&z_order);
+          });
+        });
       }
     }
 
@@ -629,6 +644,8 @@ fn apply_window_effects(
   window: &WindowContainer,
   is_focused: bool,
   config: &UserConfig,
+  #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+  dispatcher: &wm_platform::Dispatcher,
 ) {
   let window_effects = &config.value.window_effects;
 
@@ -645,7 +662,7 @@ fn apply_window_effects(
   if window_effects.focused_window.border.enabled
     || window_effects.other_windows.border.enabled
   {
-    apply_border_effect(window, effect_config);
+    apply_border_effect(window, effect_config, dispatcher);
   }
 
   #[cfg(target_os = "windows")]
@@ -674,6 +691,7 @@ fn apply_window_effects(
 fn apply_border_effect(
   window: &WindowContainer,
   effect_config: &WindowEffectConfig,
+  dispatcher: &wm_platform::Dispatcher,
 ) {
   let border_color = if effect_config.border.enabled {
     Some(&effect_config.border.color)
@@ -685,12 +703,15 @@ fn apply_border_effect(
 
   let native = window.native().clone();
   let border_color = border_color.cloned();
+  let dispatcher = dispatcher.clone();
 
   // Re-apply border color after a short delay to better handle
   // windows that change it themselves.
   tokio::task::spawn(async move {
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    _ = native.set_border_color(border_color.as_ref());
+    _ = dispatcher.dispatch_async(move || {
+      _ = native.set_border_color(border_color.as_ref());
+    });
   });
 }
 
@@ -733,60 +754,123 @@ fn apply_transparency_effect(
   _ = window.native().set_transparency(transparency);
 }
 
+#[derive(Clone)]
+struct WindowPanTarget {
+  native: wm_platform::NativeWindow,
+  unconstrained_rect: Rect,
+  monitor_rect: Rect,
+}
+
+fn calculate_tiling_physical_rect(rect: &Rect, monitor_rect: &Rect) -> Rect {
+  const SAFE_PARK_X: i32 = 50_000;
+  const SAFE_PARK_Y: i32 = 50_000;
+  if rect.right <= monitor_rect.left || rect.left >= monitor_rect.right {
+    Rect::from_xy(SAFE_PARK_X, SAFE_PARK_Y, rect.width(), rect.height())
+  } else if rect.left < monitor_rect.left && rect.right <= monitor_rect.right {
+    let visible_width = (rect.right - monitor_rect.left).max(1);
+    Rect::from_xy(monitor_rect.left, rect.y(), visible_width, rect.height())
+  } else if rect.left >= monitor_rect.left && rect.right > monitor_rect.right {
+    let visible_width = (monitor_rect.right - rect.left).max(1);
+    Rect::from_xy(rect.left, rect.y(), visible_width, rect.height())
+  } else {
+    rect.clone()
+  }
+}
+
 /// Smoothly animates the workspace `offset_x` to `target_offset` using
-/// lightweight discrete step interpolation.
+/// non-blocking discrete step interpolation dispatched to the UI thread.
 pub fn animate_pan_workspace(
   workspace: &Workspace,
   target_offset: f64,
+  state: &mut WmState,
   config: &UserConfig,
 ) {
+  // Cancel/abort any ongoing animation for this workspace so that
+  // overlapping pans cleanly redirect from the current intermediate offset.
+  if let Some(prev_task) = state.active_pan_animations.remove(&workspace.id()) {
+    prev_task.abort();
+  }
+
   let start_offset = workspace.offset_x();
   let delta = target_offset - start_offset;
+
+  workspace.set_offset_x(target_offset);
 
   #[cfg(target_os = "windows")]
   if config.value.general.animation_enabled && delta.abs() > 20.0 {
     let duration_ms = config.value.general.animation_duration_ms.max(20);
-    let steps = (duration_ms / 16).clamp(3, 8);
+    let steps = (duration_ms / 16).clamp(3, 12);
     let step_delay = std::time::Duration::from_millis(
       u64::from(duration_ms) / u64::from(steps),
     );
 
-    let tiling_windows: Vec<WindowContainer> = workspace
+    let monitor_rect = workspace
+      .monitor()
+      .map_or_else(|| Rect::from_xy(0, 0, 1920, 1080), |m| {
+        m.native_properties().working_area
+      });
+
+    let tiling_windows: Vec<WindowPanTarget> = workspace
       .descendants()
       .filter_map(|c| c.as_window_container().ok())
       .filter(|w| matches!(w.state(), WindowState::Tiling))
+      .filter_map(|win| {
+        let rect = win.to_rect().ok()?;
+        let delta = win.total_border_delta().ok()?;
+        let unconstrained = rect.apply_delta(&delta, None);
+        Some(WindowPanTarget {
+          native: win.native().clone(),
+          unconstrained_rect: unconstrained,
+          monitor_rect: monitor_rect.clone(),
+        })
+      })
       .collect();
 
-    for step in 1..steps {
-      #[allow(clippy::cast_precision_loss)]
-      let t = f64::from(step) / f64::from(steps);
-      // Ease-out quadratic formula
-      let progress = 1.0 - (1.0 - t) * (1.0 - t);
-      let intermediate_offset = start_offset + delta * progress;
+    let dispatcher = state.dispatcher.clone();
 
-      workspace.set_offset_x(intermediate_offset);
+    let task = tokio::task::spawn(async move {
+      let mut interval = tokio::time::interval(step_delay);
+      // First tick completes immediately, skip it:
+      interval.tick().await;
 
-      let mut step_positions = Vec::new();
-      for win in &tiling_windows {
-        if let Ok(rect) = win.to_rect()
-          && let Ok(border_delta) = win.total_border_delta()
-        {
-          let unconstrained_rect = rect.apply_delta(&border_delta, None);
-          let physical_rect = calculate_physical_rect(win, &unconstrained_rect, true)
-            .unwrap_or(unconstrained_rect);
-          step_positions.push((win.native().clone(), physical_rect));
+      for step in 1..=steps {
+        interval.tick().await;
+
+        #[allow(clippy::cast_precision_loss)]
+        let t = f64::from(step) / f64::from(steps);
+        // Ease-out quadratic formula
+        let progress = 1.0 - (1.0 - t) * (1.0 - t);
+        #[allow(clippy::cast_possible_truncation)]
+        let step_delta_x = (delta * (1.0 - progress)) as i32;
+
+        let mut step_positions = Vec::with_capacity(tiling_windows.len());
+        for target in &tiling_windows {
+          if !target.native.is_valid() {
+            continue;
+          }
+          let shifted_rect = Rect::from_xy(
+            target.unconstrained_rect.x() + step_delta_x,
+            target.unconstrained_rect.y(),
+            target.unconstrained_rect.width(),
+            target.unconstrained_rect.height(),
+          );
+          let physical_rect =
+            calculate_tiling_physical_rect(&shifted_rect, &target.monitor_rect);
+          step_positions.push((target.native.clone(), physical_rect));
+        }
+
+        if !step_positions.is_empty() {
+          _ = dispatcher.dispatch_async(move || {
+            _ = wm_platform::apply_window_positions(&step_positions);
+          });
         }
       }
+    });
 
-      if !step_positions.is_empty() {
-        _ = wm_platform::apply_window_positions(&step_positions);
-      }
-
-      std::thread::sleep(step_delay);
-    }
+    state
+      .active_pan_animations
+      .insert(workspace.id(), task.abort_handle());
   }
-
-  workspace.set_offset_x(target_offset);
 }
 
 fn auto_pan_all_viewports(
@@ -866,11 +950,61 @@ fn auto_pan_workspace_viewport(
   new_offset = new_offset.clamp(0.0, max_offset);
 
   if (new_offset - workspace.offset_x()).abs() > 0.001 {
-    animate_pan_workspace(workspace, new_offset, config);
+    animate_pan_workspace(workspace, new_offset, state, config);
     state
       .pending_sync
       .queue_container_to_redraw(workspace.clone());
   }
 
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::models::TilingWindow;
+
+  #[test]
+  fn test_apply_window_effects_does_not_panic_with_mock_dispatcher() {
+    let state = WmState::mock();
+    let config = UserConfig::mock();
+    let win = TilingWindow::mock().call();
+    let win_container: WindowContainer = win.into();
+    apply_window_effects(&win_container, true, &config, &state.dispatcher);
+    apply_window_effects(&win_container, false, &config, &state.dispatcher);
+  }
+
+  #[test]
+  fn test_animate_pan_workspace_disabled_animation_immediate() {
+    let mut state = WmState::mock();
+    let mut config = UserConfig::mock();
+    config.value.general.animation_enabled = false;
+
+    let ws = Workspace::mock().call();
+    ws.set_offset_x(100.0);
+
+    animate_pan_workspace(&ws, 500.0, &mut state, &config);
+
+    assert_eq!(ws.offset_x(), 500.0);
+    assert!(!state.active_pan_animations.contains_key(&ws.id()));
+  }
+
+  #[tokio::test]
+  async fn test_animate_pan_workspace_redirect_and_cancellation() {
+    let mut state = WmState::mock();
+    let mut config = UserConfig::mock();
+    config.value.general.animation_enabled = true;
+    config.value.general.animation_duration_ms = 200;
+
+    let ws = Workspace::mock().call();
+    ws.set_offset_x(0.0);
+
+    // Initial pan towards 500.0
+    animate_pan_workspace(&ws, 500.0, &mut state, &config);
+    assert!(state.active_pan_animations.contains_key(&ws.id()));
+
+    // Rapid focus switch / redirection towards 800.0 must cancel the previous task
+    animate_pan_workspace(&ws, 800.0, &mut state, &config);
+    assert!(state.active_pan_animations.contains_key(&ws.id()));
+  }
 }

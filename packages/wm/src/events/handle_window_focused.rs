@@ -102,6 +102,7 @@ pub fn handle_window_focused(
         crate::commands::general::animate_pan_workspace(
           &workspace,
           target_offset,
+          state,
           config,
         );
         state

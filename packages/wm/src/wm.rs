@@ -804,7 +804,7 @@ impl WindowManager {
         if let Some(workspace) = workspace {
           let new_offset = (workspace.offset_x() - delta).max(0.0);
           crate::commands::general::animate_pan_workspace(
-            &workspace, new_offset, config,
+            &workspace, new_offset, state, config,
           );
           state.pending_sync.queue_container_to_redraw(workspace);
         }
@@ -818,7 +818,7 @@ impl WindowManager {
         if let Some(workspace) = workspace {
           let new_offset = workspace.offset_x() + delta;
           crate::commands::general::animate_pan_workspace(
-            &workspace, new_offset, config,
+            &workspace, new_offset, state, config,
           );
           state.pending_sync.queue_container_to_redraw(workspace);
         }

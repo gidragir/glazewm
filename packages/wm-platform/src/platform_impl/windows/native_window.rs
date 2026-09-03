@@ -1,6 +1,3 @@
-use std::time::Duration;
-
-use tokio::task;
 use tracing::warn;
 use windows::{
   Win32::{
@@ -570,15 +567,6 @@ impl NativeWindow {
       | SWP_NOSIZE;
 
     unsafe { SetWindowPos(self.hwnd(), z_order_hwnd, 0, 0, 0, 0, flags) }?;
-
-    // Z-order can sometimes still be incorrect after the above call.
-    let handle = self.handle;
-    task::spawn(async move {
-      tokio::time::sleep(Duration::from_millis(10)).await;
-      let _ = unsafe {
-        SetWindowPos(HWND(handle), z_order_hwnd, 0, 0, 0, 0, flags)
-      };
-    });
 
     Ok(())
   }

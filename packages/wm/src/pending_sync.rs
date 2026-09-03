@@ -30,6 +30,10 @@ pub struct PendingSync {
   /// Whether to jump the cursor to the focused container (if enabled in
   /// user config).
   needs_cursor_jump: bool,
+
+  /// Reusable pre-allocated scratch buffer for batch window positioning.
+  /// Preserves capacity across redraw passes to eliminate heap allocations in hot paths.
+  pub batch_positions_scratch: Vec<(wm_platform::NativeWindow, wm_platform::Rect)>,
 }
 
 impl PendingSync {
@@ -45,6 +49,7 @@ impl PendingSync {
   pub fn clear(&mut self) -> &mut Self {
     self.containers_to_redraw.clear();
     self.workspaces_to_reorder.clear();
+    self.batch_positions_scratch.clear();
     self.needs_focus_update = false;
     self.needs_focused_effect_update = false;
     self.needs_all_effects_update = false;
@@ -138,5 +143,32 @@ impl PendingSync {
 
   pub fn workspaces_to_reorder(&self) -> &Vec<Workspace> {
     &self.workspaces_to_reorder
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use wm_platform::{NativeWindow, Rect};
+
+  #[test]
+  fn test_batch_positions_scratch_preserves_capacity_on_clear() {
+    let mut pending = PendingSync::default();
+    assert_eq!(pending.batch_positions_scratch.capacity(), 0);
+
+    for i in 0..10 {
+      pending.batch_positions_scratch.push((
+        NativeWindow::mock().into(),
+        Rect::from_xy(i, i, 100, 100),
+      ));
+    }
+
+    let initial_capacity = pending.batch_positions_scratch.capacity();
+    assert!(initial_capacity >= 10);
+    assert_eq!(pending.batch_positions_scratch.len(), 10);
+
+    pending.clear();
+    assert_eq!(pending.batch_positions_scratch.len(), 0);
+    assert_eq!(pending.batch_positions_scratch.capacity(), initial_capacity);
   }
 }

@@ -11,8 +11,12 @@ description = "Run strict pedantic Clippy checks"
 run = "cargo clippy --target x86_64-pc-windows-gnu -- -D warnings"
 
 [tasks.test]
-description = "Run unit tests for wm and wm-common"
-run = "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test -p wm -p wm-common --target x86_64-pc-windows-msvc"
+description = "Run unit tests for wm, wm-common, and wm-ipc-client"
+run = "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test -p wm -p wm-common -p wm-ipc-client --target x86_64-pc-windows-msvc"
+
+[tasks.benchmark]
+description = "Run layout and event loop performance benchmarks"
+run = "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test -p wm --target x86_64-pc-windows-msvc -- benchmark --nocapture"
 
 [tasks.verify]
 description = "Run all verification checks (check, clippy, test)"

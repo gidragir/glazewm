@@ -42,3 +42,16 @@ run = "cp target/x86_64-pc-windows-msvc/release/glazewm*.exe /srv/Shared/"
 description = "Build all packages and deploy to Windows VM share"
 depends = ["build:all"]
 run = "cp target/x86_64-pc-windows-msvc/release/glazewm*.exe /srv/Shared/"
+
+[tasks."sonar:status"]
+description = "Check SonarCloud quality gate status"
+run = "python3 resources/scripts/sonar.py status"
+
+[tasks."sonar:issues"]
+description = "List open SonarCloud issues"
+run = "python3 resources/scripts/sonar.py issues"
+
+[tasks."sonar:summary"]
+description = "Print high-level summary of SonarCloud issues grouped by rule and severity"
+run = "python3 resources/scripts/sonar.py summary"
+

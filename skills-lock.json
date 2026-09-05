@@ -1,6 +1,18 @@
 {
   "version": 1,
   "skills": {
+    "project-idea": {
+      "source": "./local",
+      "sourceType": "local",
+      "skillPath": ".agents/skills/project-idea/SKILL.md",
+      "computedHash": "9d0a02c40251150ddf6e4a395b0f0e4d586d45d291a3d4dbf078717264f87050"
+    },
+    "rust-analyze-package": {
+      "source": "./local",
+      "sourceType": "local",
+      "skillPath": ".agents/skills/rust-analyze-package/SKILL.md",
+      "computedHash": "1b3282b1b90919e1305d468bbce1b5610c498dadde5dac1e0806743f9e58b3ba"
+    },
     "rust-async-patterns": {
       "source": "wshobson/agents",
       "sourceType": "github",
@@ -19,17 +31,11 @@
       "skillPath": "skills/rust-testing/SKILL.md",
       "computedHash": "bd66d6441ff6d3a6acb89c902cd6a01bf58410aec3ecbc43d45409b3a3788ac8"
     },
-    "rust-analyze-package": {
-      "source": "local",
-      "sourceType": "local",
-      "skillPath": ".agents/skills/rust-analyze-package/SKILL.md",
-      "computedHash": "1b3282b1b90919e1305d468bbce1b5610c498dadde5dac1e0806743f9e58b3ba"
-    },
-    "project-idea": {
-      "source": "local",
-      "sourceType": "local",
-      "skillPath": ".agents/skills/project-idea/SKILL.md",
-      "computedHash": "9d0a02c40251150ddf6e4a395b0f0e4d586d45d291a3d4dbf078717264f87050"
+    "sonarqube-mcp": {
+      "source": "giuseppe-trisciuoglio/developer-kit",
+      "sourceType": "github",
+      "skillPath": "plugins/developer-kit-tools/skills/sonarqube-mcp/SKILL.md",
+      "computedHash": "9f1a35541258f286218e04d2ab8a2df7aa8ed45e4db8d3b932eef3fb09943492"
     }
   }
 }

@@ -125,6 +125,9 @@ mise run build       # Build release binary (glazewm.exe)
 mise run build:all   # Build all workspace binaries
 mise run deploy      # Copy release binaries to /srv/Shared/ for VM testing
 mise run release     # Build all workspace binaries + deploy to /srv/Shared/
+mise run sonar:status # Check SonarCloud quality gate status
+mise run sonar:summary # Print issue summary grouped by rule & severity
+mise run sonar:issues # List open SonarCloud issues
 ```
 
 ### Direct Cargo & Cross-Compilation Commands
@@ -168,3 +171,46 @@ cargo xwin build --release --target x86_64-pc-windows-msvc
 5. **Zero-Cost Abstractions & Allocations**:
    - Prefer references (`&T`, `&str`, `&[T]`) over unnecessary `.clone()` calls.
    - Avoid allocations inside high-frequency event passes (window moves, mouse tracking, layout recalculations).
+
+---
+
+## SonarQube & Static Analysis Workflow
+
+GlazeWM is continuously monitored on SonarCloud for code quality, security vulnerabilities, and maintainability.
+
+### Project Configuration
+- **Platform**: SonarCloud (`https://sonarcloud.io`)
+- **Project Key**: `gidragir_glazewm`
+- **Organization**: `gidragir`
+- **Config**: [`sonar-project.properties`](file:///sonar-project.properties)
+
+### MCP Server & Skill Integration
+- **Installed Skill**: [`.agents/skills/sonarqube-mcp/`](file:///.agents/skills/sonarqube-mcp/) provides end-to-end guidance and patterns for quality gates, issue triage, and pre-push analysis.
+- **MCP Server**: `sonarqube` (lazy-loaded). When querying issues or quality gates, always supply `"projectKey": "gidragir_glazewm"` and `"resolved": false`.
+- **AI Rule**: [`.agents/rules/sonarqube.md`](file:///.agents/rules/sonarqube.md) defines explicit protocols for AI pair-programming and refactoring.
+
+### Project CLI Helper (`resources/scripts/sonar.py`)
+Agents and developers should **never write ad-hoc inline Python scripts** to fetch issues or parse JSON outputs. Use the built-in zero-dependency utility:
+
+```bash
+# Quality Gate status
+mise run sonar:status
+python3 resources/scripts/sonar.py status
+
+# High-level summary of open issues by rule & severity
+mise run sonar:summary
+python3 resources/scripts/sonar.py summary
+
+# Filter issues by severity, type, rule, or file
+mise run sonar:issues
+python3 resources/scripts/sonar.py issues --severity CRITICAL --limit 10
+python3 resources/scripts/sonar.py issues --rule rust:S3776
+python3 resources/scripts/sonar.py issues --file packages/wm/src/wm.rs
+
+# View detailed rule documentation & remediation guidance
+python3 resources/scripts/sonar.py rule rust:S3776
+
+# Parse raw MCP tool output JSON without writing custom parsing scripts
+python3 resources/scripts/sonar.py parse-mcp path/to/mcp_output.json
+```
+

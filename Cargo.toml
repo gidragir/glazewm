@@ -48,3 +48,39 @@ strip = "symbols"
 [profile.dev]
 opt-level = 0
 debug = 1
+codegen-units = 256
+
+# Optimize all external dependencies in dev/test builds so that tests (parsing,
+# regex matching, serialization, and Tokio runtime) execute significantly faster,
+# while workspace crates compile quickly with opt-level 0.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.test]
+opt-level = 0
+debug = 1
+codegen-units = 256
+
+[profile.test.package."*"]
+opt-level = 2
+
+# Fast test profile: minimal debug tables (line numbers for backtraces),
+# parallel codegen units, and optimized external dependencies.
+[profile.test-fast]
+inherits = "test"
+opt-level = 0
+debug = 1
+incremental = true
+codegen-units = 256
+
+# Performance test / benchmark profile: optimized binary with line-tables for profiling,
+# fast parallel codegen, and panic unwinding for test harness compatibility.
+[profile.test-perf]
+inherits = "release"
+opt-level = 3
+debug = 1
+lto = "thin"
+codegen-units = 16
+panic = "unwind"
+strip = "none"
+

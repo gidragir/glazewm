@@ -14,9 +14,17 @@ run = "cargo clippy --target x86_64-pc-windows-gnu -- -D warnings"
 description = "Run unit tests for wm, wm-common, and wm-ipc-client"
 run = "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test -p wm -p wm-common -p wm-ipc-client --target x86_64-pc-windows-msvc"
 
+[tasks."test:fast"]
+description = "Run unit tests using optimized fast-test profile"
+run = "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test --profile test-fast -p wm -p wm-common -p wm-ipc-client --target x86_64-pc-windows-msvc"
+
+[tasks."test:perf"]
+description = "Run tests with high-performance test-perf profile"
+run = "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test --profile test-perf -p wm -p wm-common -p wm-ipc-client --target x86_64-pc-windows-msvc"
+
 [tasks.benchmark]
 description = "Run layout and event loop performance benchmarks"
-run = "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test -p wm --target x86_64-pc-windows-msvc -- benchmark --nocapture"
+run = "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test --profile test-perf -p wm --target x86_64-pc-windows-msvc -- benchmark --nocapture"
 
 [tasks.verify]
 description = "Run all verification checks (check, clippy, test)"
@@ -54,4 +62,8 @@ run = "python3 resources/scripts/sonar.py issues"
 [tasks."sonar:summary"]
 description = "Print high-level summary of SonarCloud issues grouped by rule and severity"
 run = "python3 resources/scripts/sonar.py summary"
+
+[tasks."sonar:duplications"]
+description = "List and inspect code duplications from SonarCloud"
+run = "python3 resources/scripts/sonar.py duplications"
 

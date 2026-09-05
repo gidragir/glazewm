@@ -7,7 +7,7 @@ param(
 
 function ExitOnError() {
   if ($LASTEXITCODE -ne 0) {
-    Exit 1
+    exit 1
   }
 }
 
@@ -36,14 +36,14 @@ function SignFiles() {
     [string[]]$filePaths
   )
 
-  if (!(Get-Command "azuresigntool" -ErrorAction SilentlyContinue)) {
+  if (-not (Get-Command "azuresigntool" -ErrorAction SilentlyContinue)) {
     Write-Output "Skipping signing because AzureSignTool is not installed."
-    Return
+    return
   }
 
-  if (!(HasSigningSecrets)) {
+  if (-not (HasSigningSecrets)) {
     Write-Output "Skipping signing due to missing or empty Azure Key Vault secrets."
-    Return
+    return
   }
 
   Write-Output "Signing $filePaths."
@@ -101,7 +101,7 @@ function BuildExes() {
     $sourcePaths = $requiredExes | ForEach-Object { "$sourceDir/$_" }
 
     # Build for the target if the executables do not exist.
-    if (($sourcePaths | Where-Object { !(Test-Path $_) }).Count -gt 0) {
+    if (($sourcePaths | Where-Object { -not (Test-Path $_) }).Count -gt 0) {
       Write-Output "Build artifact not found for target '$target'. Building now..."
 
       $cargoArgs = @("build", "--locked", "--release", "--target", $target)
@@ -124,47 +124,57 @@ function BuildExes() {
   }
 }
 
+function CopyPortableDocs($destinationDir) {
+  if (Test-Path "resources/assets/sample-config.yaml") {
+    Copy-Item -Path "resources/assets/sample-config.yaml" -Destination (Join-Path $destinationDir "sample-config.yaml")
+    Copy-Item -Path "resources/assets/sample-config.yaml" -Destination (Join-Path $destinationDir "config.yaml")
+  }
+  if (Test-Path "LICENSE") {
+    Copy-Item -Path "LICENSE" -Destination $destinationDir
+  }
+  if (Test-Path "README.md") {
+    Copy-Item -Path "README.md" -Destination $destinationDir
+  }
+}
+
+function CopyPortableBinaries($sourceDir, $destinationDir) {
+  $requiredExes = @("glazewm.exe", "glazewm-cli.exe", "glazewm-watcher.exe")
+  foreach ($exe in $requiredExes) {
+    $src = Join-Path $sourceDir $exe
+    if (Test-Path $src) {
+      Copy-Item -Path $src -Destination $destinationDir
+    }
+  }
+}
+
+function CreatePortableArchive($arch) {
+  $dir = "out/$arch"
+  if (-not (Test-Path $dir)) {
+    return
+  }
+
+  $portableDir = "out/glazewm-portable-$arch"
+  New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+
+  CopyPortableBinaries $dir $portableDir
+  CopyPortableDocs $portableDir
+
+  $zipName = "out/glazewm-v$VersionNumber-portable-$arch.zip"
+  if (Test-Path $zipName) {
+    Remove-Item -Force $zipName
+  }
+  Write-Output "Creating portable zip archive: $zipName"
+  Compress-Archive -Path "$portableDir/*" -DestinationPath $zipName -Force
+
+  # Also copy as generic name for CI convenience
+  Copy-Item -Path $zipName -Destination "out/glazewm-portable-$arch.zip" -Force
+  Remove-Item -Recurse -Force $portableDir
+}
+
 function BuildPortablePackages() {
   $archs = @("x64", "arm64")
-
   foreach ($arch in $archs) {
-    $dir = "out/$arch"
-    if (Test-Path $dir) {
-      $portableDir = "out/glazewm-portable-$arch"
-      New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-
-      # Copy binaries
-      $requiredExes = @("glazewm.exe", "glazewm-cli.exe", "glazewm-watcher.exe")
-      foreach ($exe in $requiredExes) {
-        $src = Join-Path $dir $exe
-        if (Test-Path $src) {
-          Copy-Item -Path $src -Destination $portableDir
-        }
-      }
-
-      # Copy config example & docs
-      if (Test-Path "resources/assets/sample-config.yaml") {
-        Copy-Item -Path "resources/assets/sample-config.yaml" -Destination (Join-Path $portableDir "sample-config.yaml")
-        Copy-Item -Path "resources/assets/sample-config.yaml" -Destination (Join-Path $portableDir "config.yaml")
-      }
-      if (Test-Path "LICENSE") {
-        Copy-Item -Path "LICENSE" -Destination $portableDir
-      }
-      if (Test-Path "README.md") {
-        Copy-Item -Path "README.md" -Destination $portableDir
-      }
-
-      $zipName = "out/glazewm-v$VersionNumber-portable-$arch.zip"
-      if (Test-Path $zipName) {
-        Remove-Item -Force $zipName
-      }
-      Write-Output "Creating portable zip archive: $zipName"
-      Compress-Archive -Path "$portableDir/*" -DestinationPath $zipName -Force
-
-      # Also copy as generic name for CI convenience
-      Copy-Item -Path $zipName -Destination "out/glazewm-portable-$arch.zip" -Force
-      Remove-Item -Recurse -Force $portableDir
-    }
+    CreatePortableArchive $arch
   }
 }
 
@@ -208,7 +218,7 @@ function Package() {
   Write-Output "Packaging with version number: $VersionNumber"
   Write-Output "UIAccess enabled: $EnableUiAccess"
 
-  if ($EnableUiAccess -and !(HasSigningSecrets)) {
+  if ($EnableUiAccess -and (-not (HasSigningSecrets))) {
     Write-Warning "UIAccess is enabled, but Azure code-signing secrets are missing. Unsigned binaries with uiAccess='true' will fail to run on Windows unless signature enforcement is disabled."
   }
 

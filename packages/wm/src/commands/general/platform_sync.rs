@@ -177,7 +177,138 @@ fn windows_to_bring_to_front(
   Ok(windows_to_bring_to_front)
 }
 
-#[allow(clippy::too_many_lines)]
+#[cfg(target_os = "windows")]
+fn batch_position_windows(
+  windows_to_update: &[&WindowContainer],
+  windows_to_redraw: &[WindowContainer],
+  state: &mut WmState,
+) {
+  state.pending_sync.batch_positions_scratch.clear();
+  for window in windows_to_update {
+    if !windows_to_redraw.contains(window) {
+      continue;
+    }
+    let Some(workspace) = window.workspace() else {
+      continue;
+    };
+
+    if !workspace.is_displayed() {
+      continue;
+    }
+    if matches!(window.state(), WindowState::Tiling)
+      && window.active_drag().is_none()
+      && let Ok(rect) = window.to_rect()
+      && let Ok(delta) = window.total_border_delta()
+    {
+      let rect_with_delta = rect.apply_delta(&delta, None);
+      if let Ok(physical_rect) =
+        calculate_physical_rect(window, &rect_with_delta, true)
+      {
+        state
+          .pending_sync
+          .batch_positions_scratch
+          .push((window.native().clone(), physical_rect));
+      }
+    }
+  }
+
+  if !state.pending_sync.batch_positions_scratch.is_empty()
+    && let Err(err) =
+      wm_platform::apply_window_positions(&state.pending_sync.batch_positions_scratch)
+  {
+    tracing::warn!("Failed to batch apply window positions: {}", err);
+  }
+}
+
+fn determine_z_order(
+  window: &WindowContainer,
+  should_bring_to_front: bool,
+  workspace: &Workspace,
+) -> WindowZOrder {
+  match window.state() {
+    WindowState::Floating(config) if config.shown_on_top => {
+      WindowZOrder::TopMost
+    }
+    WindowState::Fullscreen(config) if config.shown_on_top => {
+      WindowZOrder::TopMost
+    }
+    _ if should_bring_to_front => {
+      let focused_descendant = workspace
+        .descendant_focus_order()
+        .next()
+        .and_then(|container| container.as_window_container().ok());
+
+      if let Some(focused_descendant) = focused_descendant {
+        if window.id() == focused_descendant.id() {
+          WindowZOrder::Top
+        } else {
+          WindowZOrder::AfterWindow(focused_descendant.native().id())
+        }
+      } else {
+        WindowZOrder::Normal
+      }
+    }
+    _ => WindowZOrder::Normal,
+  }
+}
+
+#[cfg(target_os = "windows")]
+fn apply_window_z_order(
+  window: &WindowContainer,
+  z_order: &WindowZOrder,
+  dispatcher: &wm_platform::Dispatcher,
+) {
+  tracing::info!("Updating window z-order: {window}");
+
+  if let Err(err) = window.native().set_z_order(z_order) {
+    tracing::warn!("Failed to set window z-order: {}", err);
+  }
+
+  let native = window.native().clone();
+  let z_order = z_order.clone();
+  let dispatcher = dispatcher.clone();
+  tokio::task::spawn(async move {
+    tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+    _ = dispatcher.dispatch_async(move || {
+      _ = native.set_z_order(&z_order);
+    });
+  });
+}
+
+#[cfg(target_os = "windows")]
+fn apply_windows_fullscreen_and_taskbar(
+  window: &WindowContainer,
+  is_visible: bool,
+  config: &UserConfig,
+) {
+  let is_transitioning_fullscreen =
+    match (window.prev_state(), window.state()) {
+      (Some(_), WindowState::Fullscreen(s)) if !s.maximized => true,
+      (Some(WindowState::Fullscreen(_)), _) => true,
+      _ => false,
+    };
+
+  if is_transitioning_fullscreen
+    && let Err(err) = window.native().mark_fullscreen(matches!(
+      window.state(),
+      WindowState::Fullscreen(_)
+    ))
+  {
+    tracing::warn!("Failed to mark window as fullscreen: {}", err);
+  }
+
+  if config.value.general.hide_method == HideMethod::Cloak
+    && !config.value.general.show_all_in_taskbar
+    && matches!(
+      window.display_state(),
+      DisplayState::Showing | DisplayState::Hiding
+    )
+    && let Err(err) = window.native().set_taskbar_visibility(is_visible)
+  {
+    tracing::warn!("Failed to set taskbar visibility: {}", err);
+  }
+}
+
 fn redraw_containers(
   focused_container: &Container,
   state: &mut WmState,
@@ -199,10 +330,6 @@ fn redraw_containers(
       .descendant_focus_order()
       .collect::<Vec<_>>();
 
-    // Sort the windows to update by their focus order. The most recently
-    // focused window will be updated first.
-    // TODO: To reduce flicker, redraw windows that will be shown first,
-    // then redraw the ones to be hidden last.
     windows.sort_by_key(|window| {
       descendant_focus_order
         .iter()
@@ -212,47 +339,10 @@ fn redraw_containers(
     windows
   };
 
-  // Get monitors by their optimal hide corner.
   let monitors_by_hide_corner = state.monitors_by_hide_corner();
 
   #[cfg(target_os = "windows")]
-  {
-    state.pending_sync.batch_positions_scratch.clear();
-    for window in &windows_to_update {
-      if !windows_to_redraw.contains(window) {
-        continue;
-      }
-      let Some(workspace) = window.workspace() else {
-        continue;
-      };
-
-      if !workspace.is_displayed() {
-        continue;
-      }
-      if matches!(window.state(), WindowState::Tiling)
-        && window.active_drag().is_none()
-        && let Ok(rect) = window.to_rect()
-        && let Ok(delta) = window.total_border_delta()
-      {
-        let rect_with_delta = rect.apply_delta(&delta, None);
-        if let Ok(physical_rect) =
-          calculate_physical_rect(window, &rect_with_delta, true)
-        {
-          state
-            .pending_sync
-            .batch_positions_scratch
-            .push((window.native().clone(), physical_rect));
-        }
-      }
-    }
-
-    if !state.pending_sync.batch_positions_scratch.is_empty()
-      && let Err(err) =
-        wm_platform::apply_window_positions(&state.pending_sync.batch_positions_scratch)
-    {
-      tracing::warn!("Failed to batch apply window positions: {}", err);
-    }
-  }
+  batch_position_windows(&windows_to_update, &windows_to_redraw, state);
 
   for window in windows_to_update.iter().rev() {
     let should_bring_to_front = windows_to_bring_to_front.contains(window);
@@ -267,67 +357,17 @@ fn redraw_containers(
       .map(|(_, hide_corner)| hide_corner)
       .context("Monitor not found in hide corner map.")?;
 
-    // Whether the window should be shown above all other windows.
-    let z_order = match window.state() {
-      WindowState::Floating(config) if config.shown_on_top => {
-        WindowZOrder::TopMost
-      }
-      WindowState::Fullscreen(config) if config.shown_on_top => {
-        WindowZOrder::TopMost
-      }
-      _ if should_bring_to_front => {
-        let focused_descendant = workspace
-          .descendant_focus_order()
-          .next()
-          .and_then(|container| container.as_window_container().ok());
+    let z_order = determine_z_order(window, should_bring_to_front, &workspace);
 
-        if let Some(focused_descendant) = focused_descendant {
-          if window.id() == focused_descendant.id() {
-            WindowZOrder::Top
-          } else {
-            WindowZOrder::AfterWindow(focused_descendant.native().id())
-          }
-        } else {
-          WindowZOrder::Normal
-        }
-      }
-      _ => WindowZOrder::Normal,
-    };
-
-    // Set the z-order of the window.
-    //
-    // NOTE: macOS doesn't have a robust public API for setting the z-order
-    // of a window. See `NativeWindow::raise` for more details.
     #[cfg(target_os = "windows")]
     if should_bring_to_front {
-      tracing::info!("Updating window z-order: {window}");
-
-      if let Err(err) = window.native().set_z_order(&z_order) {
-        tracing::warn!("Failed to set window z-order: {}", err);
-      }
-
-      #[cfg(target_os = "windows")]
-      {
-        let native = window.native().clone();
-        let z_order = z_order.clone();
-        let dispatcher = state.dispatcher.clone();
-        tokio::task::spawn(async move {
-          tokio::time::sleep(std::time::Duration::from_millis(15)).await;
-          _ = dispatcher.dispatch_async(move || {
-            _ = native.set_z_order(&z_order);
-          });
-        });
-      }
+      apply_window_z_order(window, &z_order, &state.dispatcher);
     }
 
-    // Skip updating the window's position if it only required a z-order
-    // change.
     if !windows_to_redraw.contains(window) {
       continue;
     }
 
-    // Transition display state depending on whether window will be
-    // shown or hidden.
     window.set_display_state(
       match (window.display_state(), workspace.is_displayed()) {
         (DisplayState::Hidden | DisplayState::Hiding, true) => {
@@ -351,43 +391,111 @@ fn redraw_containers(
       tracing::warn!("Failed to set window position: {}", err);
     }
 
-    // Whether the window is either transitioning to or from fullscreen.
-    // TODO: This check can be improved since `prev_state` can be
-    // fullscreen without it needing to be marked as not fullscreen.
     #[cfg(target_os = "windows")]
-    {
-      let is_transitioning_fullscreen =
-        match (window.prev_state(), window.state()) {
-          (Some(_), WindowState::Fullscreen(s)) if !s.maximized => true,
-          (Some(WindowState::Fullscreen(_)), _) => true,
-          _ => false,
-        };
+    apply_windows_fullscreen_and_taskbar(window, is_visible, config);
+  }
 
-      if is_transitioning_fullscreen
-        && let Err(err) = window.native().mark_fullscreen(matches!(
-          window.state(),
-          WindowState::Fullscreen(_)
-        ))
-      {
-        tracing::warn!("Failed to mark window as fullscreen: {}", err);
+  Ok(())
+}
+
+fn reposition_in_corner(
+  window: &WindowContainer,
+  hide_corner: HideCorner,
+) -> anyhow::Result<()> {
+  const VISIBLE_SLIVER: i32 = 1;
+
+  let monitor_rect = window
+    .monitor()
+    .context("No monitor.")?
+    .native_properties()
+    .working_area;
+
+  let frame = window.native_properties().frame;
+
+  let position_y = monitor_rect.bottom - VISIBLE_SLIVER;
+  let position_x = match hide_corner {
+    HideCorner::BottomLeft => {
+      monitor_rect.left + VISIBLE_SLIVER - frame.width()
+    }
+    HideCorner::BottomRight => monitor_rect.right - VISIBLE_SLIVER,
+  };
+
+  window.native().set_frame(&Rect::from_xy(
+    position_x,
+    position_y,
+    frame.width(),
+    frame.height(),
+  ))?;
+
+  Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn should_restore_window(window: &WindowContainer) -> anyhow::Result<bool> {
+  match &window.state() {
+    WindowState::Fullscreen(fullscreen) => {
+      Ok(!fullscreen.maximized && window.native().is_maximized()?)
+    }
+    WindowState::Minimized => Ok(false),
+    _ => Ok(window.native().is_minimized()? || window.native().is_maximized()?),
+  }
+}
+
+#[cfg(target_os = "windows")]
+fn apply_windows_reposition(
+  window: &WindowContainer,
+  physical_rect: &Rect,
+  z_order: &WindowZOrder,
+  is_visible: bool,
+  config: &UserConfig,
+) -> anyhow::Result<()> {
+  use wm_platform::{
+    SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOCOPYBITS, SWP_NOSENDCHANGING, WS_MAXIMIZEBOX,
+  };
+
+  if should_restore_window(window)? {
+    window.native().restore(Some(physical_rect))?;
+  }
+
+  let mut swp_flags = SWP_NOACTIVATE
+    | SWP_NOCOPYBITS
+    | SWP_NOSENDCHANGING
+    | SWP_ASYNCWINDOWPOS;
+
+  match &window.state() {
+    WindowState::Minimized => {
+      if !window.native().is_minimized()? {
+        window.native().minimize()?;
       }
     }
-
-    // Skip setting taskbar visibility if the window is hidden (has no
-    // effect). Since cloaked windows are normally always visible in the
-    // taskbar, we only need to set visibility if `show_all_in_taskbar` is
-    // `false`.
-    #[cfg(target_os = "windows")]
-    if config.value.general.hide_method == HideMethod::Cloak
-      && !config.value.general.show_all_in_taskbar
-      && matches!(
-        window.display_state(),
-        DisplayState::Showing | DisplayState::Hiding
-      )
-      && let Err(err) = window.native().set_taskbar_visibility(is_visible)
+    WindowState::Fullscreen(fullscreen)
+      if fullscreen.maximized
+        && window.native().has_window_style(WS_MAXIMIZEBOX) =>
     {
-      tracing::warn!("Failed to set taskbar visibility: {}", err);
+      if !window.native().is_maximized()? {
+        window.native().maximize()?;
+      }
+
+      window.native().set_window_pos(z_order, physical_rect, swp_flags)?;
     }
+    _ => {
+      swp_flags |= SWP_FRAMECHANGED;
+
+      window.native().set_window_pos(z_order, physical_rect, swp_flags)?;
+
+      if window.has_pending_dpi_adjustment() {
+        window.native().set_window_pos(z_order, physical_rect, swp_flags)?;
+      }
+    }
+  }
+
+  if config.value.general.hide_method == HideMethod::Cloak {
+    window.native().set_cloaked(!is_visible)?;
+  } else if is_visible {
+    window.native().show()?;
+  } else {
+    window.native().hide()?;
   }
 
   Ok(())
@@ -406,40 +514,10 @@ fn reposition_window(
     .to_rect()?
     .apply_delta(&window.total_border_delta()?, None);
 
-  // For `HideMethod::PlaceInCorner`, we need to reposition hidden windows
-  // to the corner of the monitor.
   if config.value.general.hide_method == HideMethod::PlaceInCorner
     && !is_visible
   {
-    const VISIBLE_SLIVER: i32 = 1;
-
-    let monitor_rect = window
-      .monitor()
-      .context("No monitor.")?
-      .native_properties()
-      .working_area;
-
-    let frame = window.native_properties().frame;
-
-    let position_y = monitor_rect.bottom - VISIBLE_SLIVER;
-    let position_x = match hide_corner {
-      HideCorner::BottomLeft => {
-        monitor_rect.left + VISIBLE_SLIVER - frame.width()
-      }
-      HideCorner::BottomRight => monitor_rect.right - VISIBLE_SLIVER,
-    };
-
-    // Even though the window size is unchanged, `NativeWindow::set_frame`
-    // is used instead of `NativeWindow::reposition` because the latter
-    // resulted in occasional incorrect positionings on macOS.
-    window.native().set_frame(&Rect::from_xy(
-      position_x,
-      position_y,
-      frame.width(),
-      frame.height(),
-    ))?;
-
-    return Ok(());
+    return reposition_in_corner(window, hide_corner);
   }
 
   let physical_rect = calculate_physical_rect(window, &rect, is_visible)?;
@@ -451,84 +529,50 @@ fn reposition_window(
     window.native().set_frame(&physical_rect)?;
 
     #[cfg(target_os = "windows")]
-    {
-      use wm_platform::{
-        SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-        SWP_NOCOPYBITS, SWP_NOSENDCHANGING, WS_MAXIMIZEBOX,
-      };
-
-      // Restore window if it's minimized/maximized and shouldn't be. This
-      // is needed to be able to move and resize it.
-      let should_restore = match &window.state() {
-        // Need to restore window if transitioning from maximized
-        // fullscreen to non-maximized fullscreen.
-        WindowState::Fullscreen(fullscreen) => {
-          !fullscreen.maximized && window.native().is_maximized()?
-        }
-        // No need to restore window if it'll be minimized. Transitioning
-        // from maximized to minimized works without having to
-        // restore.
-        WindowState::Minimized => false,
-        _ => {
-          window.native().is_minimized()?
-            || window.native().is_maximized()?
-        }
-      };
-
-      if should_restore {
-        // Restoring to position has the same effect as `ShowWindow` with
-        // `SW_RESTORE`, but doesn't cause a flicker.
-        window.native().restore(Some(&physical_rect))?;
-      }
-
-      let mut swp_flags = SWP_NOACTIVATE
-        | SWP_NOCOPYBITS
-        | SWP_NOSENDCHANGING
-        | SWP_ASYNCWINDOWPOS;
-
-      match &window.state() {
-        WindowState::Minimized => {
-          if !window.native().is_minimized()? {
-            window.native().minimize()?;
-          }
-        }
-        WindowState::Fullscreen(fullscreen)
-          if fullscreen.maximized
-            && window.native().has_window_style(WS_MAXIMIZEBOX) =>
-        {
-          if !window.native().is_maximized()? {
-            window.native().maximize()?;
-          }
-
-          window.native().set_window_pos(z_order, &physical_rect, swp_flags)?;
-        }
-        _ => {
-          swp_flags |= SWP_FRAMECHANGED;
-
-          window.native().set_window_pos(z_order, &physical_rect, swp_flags)?;
-
-          // When there's a mismatch between the DPI of the monitor and the
-          // window, the window might be sized incorrectly after the first
-          // move. If we set the position twice, inconsistencies after the
-          // first move are resolved.
-          if window.has_pending_dpi_adjustment() {
-            window.native().set_window_pos(z_order, &physical_rect, swp_flags)?;
-          }
-        }
-      }
-
-      // Set visibility based on the hide method.
-      if config.value.general.hide_method == HideMethod::Cloak {
-        window.native().set_cloaked(!is_visible)?;
-      } else if is_visible {
-        window.native().show()?;
-      } else {
-        window.native().hide()?;
-      }
-    }
+    apply_windows_reposition(window, &physical_rect, z_order, is_visible, config)?;
   }
 
   Ok(())
+}
+
+fn check_monitor_bleeding(
+  rect: &Rect,
+  monitor_rect: &Rect,
+  other_monitor_rects: &[Rect],
+  check_left: bool,
+  check_right: bool,
+) -> bool {
+  const SHADOW_MARGIN: i32 = 10;
+  let mut bleeds_left = false;
+  let mut bleeds_right = false;
+
+  for other in other_monitor_rects {
+    if check_left
+      && !bleeds_left
+      && other.left < monitor_rect.left - SHADOW_MARGIN
+      && other.right > rect.left
+      && other.top < rect.bottom
+      && other.bottom > rect.top
+    {
+      bleeds_left = true;
+    }
+
+    if check_right
+      && !bleeds_right
+      && other.left < rect.right
+      && other.right > monitor_rect.right + SHADOW_MARGIN
+      && other.top < rect.bottom
+      && other.bottom > rect.top
+    {
+      bleeds_right = true;
+    }
+
+    if (!check_left || bleeds_left) && (!check_right || bleeds_right) {
+      break;
+    }
+  }
+
+  bleeds_left || bleeds_right
 }
 
 fn calculate_tiling_physical_rect(
@@ -541,9 +585,6 @@ fn calculate_tiling_physical_rect(
   const SHADOW_MARGIN: i32 = 10;
 
   if rect.right <= monitor_rect.left || rect.left >= monitor_rect.right {
-    // Completely offscreen relative to parent monitor.
-    // Park at safe virtual desktop coordinates far outside all monitors,
-    // keeping original dimensions so taskbar and Alt+Tab remain functional.
     return Rect::from_xy(
       SAFE_PARK_X,
       SAFE_PARK_Y,
@@ -551,56 +592,21 @@ fn calculate_tiling_physical_rect(
       rect.height(),
     );
   }
-
-  let phys_left = rect.left;
-  let phys_right = rect.right;
 
   let check_left = rect.left < monitor_rect.left
     && (monitor_rect.left - rect.left) > SHADOW_MARGIN;
   let check_right = rect.right > monitor_rect.right
     && (rect.right - monitor_rect.right) > SHADOW_MARGIN;
 
-  if check_left || check_right {
-    let mut bleeds_left = false;
-    let mut bleeds_right = false;
-
-    for other in other_monitor_rects {
-      if check_left
-        && !bleeds_left
-        && other.left < monitor_rect.left - SHADOW_MARGIN
-        && other.right > rect.left
-        && other.top < rect.bottom
-        && other.bottom > rect.top
-      {
-        bleeds_left = true;
-      }
-
-      if check_right
-        && !bleeds_right
-        && other.left < rect.right
-        && other.right > monitor_rect.right + SHADOW_MARGIN
-        && other.top < rect.bottom
-        && other.bottom > rect.top
-      {
-        bleeds_right = true;
-      }
-
-      if (!check_left || bleeds_left) && (!check_right || bleeds_right) {
-        break;
-      }
-    }
-
-    if bleeds_left || bleeds_right {
-      return Rect::from_xy(
-        SAFE_PARK_X,
-        SAFE_PARK_Y,
-        rect.width(),
-        rect.height(),
-      );
-    }
-  }
-
-  if phys_right <= phys_left {
+  if (check_left || check_right)
+    && check_monitor_bleeding(
+      rect,
+      monitor_rect,
+      other_monitor_rects,
+      check_left,
+      check_right,
+    )
+  {
     return Rect::from_xy(
       SAFE_PARK_X,
       SAFE_PARK_Y,
@@ -609,7 +615,16 @@ fn calculate_tiling_physical_rect(
     );
   }
 
-  Rect::from_ltrb(phys_left, rect.top, phys_right, rect.bottom)
+  if rect.right <= rect.left {
+    return Rect::from_xy(
+      SAFE_PARK_X,
+      SAFE_PARK_Y,
+      rect.width(),
+      rect.height(),
+    );
+  }
+
+  Rect::from_ltrb(rect.left, rect.top, rect.right, rect.bottom)
 }
 
 fn calculate_physical_rect(
@@ -645,6 +660,38 @@ fn calculate_physical_rect(
   }
 }
 
+fn calculate_jump_target_point(
+  focused_container: &Container,
+  monitor_rect: &Rect,
+) -> wm_platform::Point {
+  let Ok(window) = focused_container.as_window_container() else {
+    return monitor_rect.center_point();
+  };
+
+  let Ok(rect) = window.to_rect() else {
+    return monitor_rect.center_point();
+  };
+
+  let Ok(physical_rect) = calculate_physical_rect(&window, &rect, true) else {
+    return monitor_rect.center_point();
+  };
+
+  if physical_rect.left >= 40_000 || physical_rect.top >= 40_000 {
+    monitor_rect.center_point()
+  } else {
+    wm_platform::Point {
+      x: physical_rect
+        .center_point()
+        .x
+        .clamp(monitor_rect.left, monitor_rect.right.saturating_sub(1)),
+      y: physical_rect
+        .center_point()
+        .y
+        .clamp(monitor_rect.top, monitor_rect.bottom.saturating_sub(1)),
+    }
+  }
+}
+
 fn jump_cursor(
   focused_container: &Container,
   state: &WmState,
@@ -662,39 +709,13 @@ fn jump_cursor(
       let cursor_monitor =
         cursor_pos.as_ref().and_then(|pos| state.monitor_at_point(pos));
 
-      // Jump to the target monitor if the cursor is not already on it.
       cursor_monitor
         .is_none_or(|monitor| monitor.id() != target_monitor.id())
     }
   };
 
   if should_jump {
-    let center = if let Ok(window) = focused_container.as_window_container() {
-      if let Ok(rect) = window.to_rect()
-        && let Ok(physical_rect) =
-          calculate_physical_rect(&window, &rect, true)
-      {
-        if physical_rect.left >= 40_000 || physical_rect.top >= 40_000 {
-          monitor_rect.center_point()
-        } else {
-          wm_platform::Point {
-            x: physical_rect
-              .center_point()
-              .x
-              .clamp(monitor_rect.left, monitor_rect.right.saturating_sub(1)),
-            y: physical_rect
-              .center_point()
-              .y
-              .clamp(monitor_rect.top, monitor_rect.bottom.saturating_sub(1)),
-          }
-        }
-      } else {
-        monitor_rect.center_point()
-      }
-    } else {
-      monitor_rect.center_point()
-    };
-
+    let center = calculate_jump_target_point(focused_container, &monitor_rect);
     if let Err(err) = state.dispatcher.set_cursor_position(&center) {
       tracing::warn!("Failed to set cursor position: {}", err);
     }

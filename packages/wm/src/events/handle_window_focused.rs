@@ -7,10 +7,111 @@ use crate::{
   commands::{
     container::set_focused_descendant, window::run_window_rules,
   },
+  models::{Container, WindowContainer, Workspace},
   traits::{CommonGetters, PositionGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
 };
+
+fn is_unsolicited_focus(
+  window: &WindowContainer,
+  workspace: &Workspace,
+) -> bool {
+  let is_on_displayed_workspace = workspace
+    .monitor()
+    .and_then(|m| m.displayed_workspace())
+    .is_some_and(|displayed_ws| displayed_ws.id() == workspace.id());
+
+  let is_visible = matches!(
+    window.display_state(),
+    DisplayState::Shown | DisplayState::Showing
+  );
+
+  !is_visible || !is_on_displayed_workspace
+}
+
+fn auto_pan_viewport_if_needed(
+  workspace: &Workspace,
+  window: &WindowContainer,
+  state: &mut WmState,
+  config: &UserConfig,
+) {
+  let (Ok(workspace_rect), Ok(window_rect)) =
+    (workspace.to_rect(), window.to_rect())
+  else {
+    return;
+  };
+
+  #[allow(clippy::cast_possible_truncation)]
+  let current_offset = workspace.offset_x() as i32;
+  let mut new_offset = current_offset;
+
+  if window_rect.left < workspace_rect.left {
+    let delta = window_rect.left - workspace_rect.left;
+    new_offset = (current_offset + delta).max(0);
+  } else if window_rect.right > workspace_rect.right {
+    let delta = window_rect.right - workspace_rect.right;
+    new_offset = (current_offset + delta).max(0);
+  }
+
+  let target_offset = f64::from(new_offset);
+  if (target_offset - workspace.offset_x()).abs() > 0.001 {
+    crate::commands::general::animate_pan_workspace(
+      workspace,
+      target_offset,
+      state,
+      config,
+    );
+    state
+      .pending_sync
+      .queue_container_to_redraw(workspace.clone());
+  }
+}
+
+fn handle_managed_window_focus(
+  window: &WindowContainer,
+  focused_container: &Container,
+  state: &mut WmState,
+  config: &mut UserConfig,
+) -> anyhow::Result<()> {
+  let workspace = window.workspace().context("No workspace")?;
+
+  // Native focus has been synced to the WM's focused container.
+  if *focused_container == window.clone().into() {
+    state.is_focus_synced = true;
+    state.pending_sync.queue_workspace_to_reorder(workspace);
+    state.pending_sync.queue_focused_effect_update();
+    return Ok(());
+  }
+
+  if is_unsolicited_focus(window, &workspace) {
+    info!("Prevented unsolicited background focus from: {window}");
+    state.pending_sync.queue_focus_change();
+    return Ok(());
+  }
+
+  info!("Window manually focused: {window}");
+  state.pending_sync.queue_focused_effect_update();
+  set_focused_descendant(&window.clone().into(), None);
+
+  auto_pan_viewport_if_needed(&workspace, window, state, config);
+
+  run_window_rules(
+    window.clone(),
+    &WindowRuleEvent::Focus,
+    state,
+    config,
+  )?;
+
+  state.is_focus_synced = true;
+  state.pending_sync.queue_workspace_to_reorder(workspace);
+
+  state.emit_event(WmEvent::FocusChanged {
+    focused_container: window.to_dto()?,
+  });
+
+  Ok(())
+}
 
 pub fn handle_window_focused(
   native_window: &NativeWindow,
@@ -28,12 +129,7 @@ pub fn handle_window_focused(
     _ => native_window.is_desktop_window().unwrap_or(false),
   };
 
-  // Handle overriding focus on close/minimize. After a window is closed
-  // or minimized, the OS or the closed application might automatically
-  // switch focus to a different window. To force focus to go to the WM's
-  // target focus container, we reassign any focus events 100ms after
-  // close/minimize. This will cause focus to briefly flicker to the OS
-  // focus target and then to the WM's focus target.
+  // Handle overriding focus on close/minimize.
   if should_override_focus(state) {
     state.pending_sync.queue_focus_change();
     return Ok(());
@@ -47,90 +143,7 @@ pub fn handle_window_focused(
   }
 
   if let Some(window) = found_window {
-    let workspace = window.workspace().context("No workspace")?;
-
-    // Native focus has been synced to the WM's focused container.
-    if focused_container == window.clone().into() {
-      state.is_focus_synced = true;
-      state.pending_sync.queue_workspace_to_reorder(workspace);
-      state.pending_sync.queue_focused_effect_update();
-      return Ok(());
-    }
-
-    // Check if the window is visible on a currently displayed workspace.
-    // If the window is hidden, minimized, or on an inactive workspace, it is
-    // an unsolicited background focus signal (e.g. from Discord, Telegram, etc.).
-    // We reject the focus shift and restore OS focus back to the user's
-    // active container.
-    let is_on_displayed_workspace = workspace
-      .monitor()
-      .and_then(|m| m.displayed_workspace())
-      .is_some_and(|displayed_ws| displayed_ws.id() == workspace.id());
-
-    let is_visible = matches!(
-      window.display_state(),
-      DisplayState::Shown | DisplayState::Showing
-    );
-
-    if !is_visible || !is_on_displayed_workspace {
-      info!("Prevented unsolicited background focus from: {window}");
-      state.pending_sync.queue_focus_change();
-      return Ok(());
-    }
-
-    info!("Window manually focused: {window}");
-
-    // Focus effect should be updated for legitimate focus change.
-    state.pending_sync.queue_focused_effect_update();
-
-    // Update the WM's focus state.
-    set_focused_descendant(&window.clone().into(), None);
-
-    // Auto-pan viewport to bring focused window into view if needed.
-    if let (Ok(workspace_rect), Ok(window_rect)) =
-      (workspace.to_rect(), window.to_rect())
-    {
-      #[allow(clippy::cast_possible_truncation)]
-      let current_offset = workspace.offset_x() as i32;
-      let mut new_offset = current_offset;
-
-      if window_rect.left < workspace_rect.left {
-        let delta = window_rect.left - workspace_rect.left;
-        new_offset = (current_offset + delta).max(0);
-      } else if window_rect.right > workspace_rect.right {
-        let delta = window_rect.right - workspace_rect.right;
-        new_offset = (current_offset + delta).max(0);
-      }
-
-      let target_offset = f64::from(new_offset);
-      if (target_offset - workspace.offset_x()).abs() > 0.001 {
-        crate::commands::general::animate_pan_workspace(
-          &workspace,
-          target_offset,
-          state,
-          config,
-        );
-        state
-          .pending_sync
-          .queue_container_to_redraw(workspace.clone());
-      }
-    }
-
-    // Run window rules for focus events.
-    run_window_rules(
-      window.clone(),
-      &WindowRuleEvent::Focus,
-      state,
-      config,
-    )?;
-
-    state.is_focus_synced = true;
-    state.pending_sync.queue_workspace_to_reorder(workspace);
-
-    // Broadcast the focus change event.
-    state.emit_event(WmEvent::FocusChanged {
-      focused_container: window.to_dto()?,
-    });
+    handle_managed_window_focus(&window, &focused_container, state, config)?;
   } else {
     // An unmanaged or desktop window received focus.
     state.pending_sync.queue_focused_effect_update();

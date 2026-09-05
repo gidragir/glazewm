@@ -3,10 +3,58 @@ use wm_common::WindowState;
 
 use crate::{
   commands::container::set_focused_descendant,
+  models::{WindowContainer, Workspace},
   traits::{CommonGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
 };
+
+#[allow(clippy::struct_excessive_bools)]
+struct OmitFlags {
+  floating: bool,
+  fullscreen: bool,
+  minimized: bool,
+  tiling: bool,
+}
+
+fn is_state_omitted(state: &WindowState, omit: &OmitFlags) -> bool {
+  match state {
+    WindowState::Floating(_) => omit.floating,
+    WindowState::Fullscreen(_) => omit.fullscreen,
+    WindowState::Minimized => omit.minimized,
+    WindowState::Tiling => omit.tiling,
+  }
+}
+
+fn find_window_matching_state(
+  workspace: &Workspace,
+  target_state: &WindowState,
+) -> Option<WindowContainer> {
+  workspace
+    .descendant_focus_order()
+    .filter_map(|descendant| descendant.as_window_container().ok())
+    .find(|descendant| descendant.state().is_same_state(target_state))
+}
+
+fn find_next_window_to_cycle(
+  workspace: &Workspace,
+  current: &WindowState,
+  omit: &OmitFlags,
+  config: &UserConfig,
+) -> Option<WindowContainer> {
+  let mut next = next_state(current, config);
+
+  while !current.is_same_state(&next) {
+    if !is_state_omitted(&next, omit)
+      && let Some(window) = find_window_matching_state(workspace, &next)
+    {
+      return Some(window);
+    }
+    next = next_state(&next, config);
+  }
+
+  None
+}
 
 /// Cycles focus through windows of different states. In order, this will
 /// change from tiling -> floating -> fullscreen -> minimized, then back to
@@ -25,50 +73,23 @@ pub fn cycle_focus(
   let focused_container =
     state.focused_container().context("No focused container.")?;
 
-  if let Ok(window) = focused_container.as_window_container() {
-    let workspace = window.workspace().context("No workspace.")?;
+  let Ok(window) = focused_container.as_window_container() else {
+    return Ok(());
+  };
 
-    let current = window.state();
-    let mut next = next_state(&current, config);
+  let workspace = window.workspace().context("No workspace.")?;
+  let omit = OmitFlags {
+    floating: omit_floating,
+    fullscreen: omit_fullscreen,
+    minimized: omit_minimized,
+    tiling: omit_tiling,
+  };
 
-    loop {
-      // Break if we have cycled back to the current state.
-      if current.is_same_state(&next) {
-        break;
-      }
-
-      // Skip the next state if it is to be omitted.
-      if (omit_floating && matches!(next, WindowState::Floating(_)))
-        || omit_fullscreen && matches!(next, WindowState::Fullscreen(_))
-        || omit_minimized && matches!(next, WindowState::Minimized)
-        || omit_tiling && matches!(next, WindowState::Tiling)
-      {
-        next = next_state(&next, config);
-        continue;
-      }
-
-      // Get window that matches the next state.
-      let window_of_type = workspace
-        .descendant_focus_order()
-        .filter_map(|descendant| descendant.as_window_container().ok())
-        .find(|descendant| {
-          matches!(
-            (descendant.state(), &next),
-            (WindowState::Floating(_), WindowState::Floating(_))
-              | (WindowState::Fullscreen(_), WindowState::Fullscreen(_))
-              | (WindowState::Minimized, WindowState::Minimized)
-              | (WindowState::Tiling, WindowState::Tiling)
-          )
-        });
-
-      if let Some(window) = window_of_type {
-        set_focused_descendant(&window.into(), None);
-        state.pending_sync.queue_focus_change().queue_cursor_jump();
-        break;
-      }
-
-      next = next_state(&next, config);
-    }
+  if let Some(target_window) =
+    find_next_window_to_cycle(&workspace, &window.state(), &omit, config)
+  {
+    set_focused_descendant(&target_window.into(), None);
+    state.pending_sync.queue_focus_change().queue_cursor_jump();
   }
 
   Ok(())

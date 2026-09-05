@@ -102,6 +102,86 @@ fn floating_focus_target(
   }
 }
 
+fn get_adjacent_tiling_sibling(
+  container: &Container,
+  direction: &Direction,
+) -> Option<TilingContainer> {
+  match direction {
+    Direction::Up | Direction::Left => container
+      .prev_siblings()
+      .find_map(|c| c.as_tiling_container().ok()),
+    _ => container
+      .next_siblings()
+      .find_map(|c| c.as_tiling_container().ok()),
+  }
+}
+
+fn find_column_fullscreen_window(
+  workspace: &crate::models::Workspace,
+  column_id: uuid::Uuid,
+) -> Option<Container> {
+  workspace
+    .children()
+    .into_iter()
+    .filter_map(|c| c.as_non_tiling_window().cloned())
+    .find(|w| {
+      matches!(w.state(), WindowState::Fullscreen(_))
+        && w
+          .insertion_target()
+          .is_some_and(|it| it.target_parent.id() == column_id)
+    })
+    .map(Into::into)
+}
+
+fn find_adjacent_fullscreen_window(
+  origin_or_ancestor: &Container,
+  direction: &Direction,
+) -> Option<Container> {
+  if !matches!(direction, Direction::Left | Direction::Right) {
+    return None;
+  }
+
+  let ws = origin_or_ancestor.workspace()?;
+  ws.children()
+    .into_iter()
+    .filter_map(|c| c.as_non_tiling_window().cloned())
+    .find(|w| {
+      if !matches!(w.state(), WindowState::Fullscreen(_)) {
+        return false;
+      }
+      w.insertion_target().is_some_and(|target| match direction {
+        Direction::Left => origin_or_ancestor
+          .prev_siblings()
+          .any(|s| s.id() == target.target_parent.id()),
+        Direction::Right => origin_or_ancestor
+          .next_siblings()
+          .any(|s| s.id() == target.target_parent.id()),
+        _ => false,
+      })
+    })
+    .map(Into::into)
+}
+
+fn resolve_tiling_target(
+  target: &TilingContainer,
+  origin_or_ancestor: &Container,
+  direction: &Direction,
+) -> Option<Container> {
+  // If the target column has an active fullscreen window, focus that fullscreen window.
+  if let Some(ws) = origin_or_ancestor.workspace()
+    && let Some(fs_win) = find_column_fullscreen_window(&ws, target.id())
+  {
+    return Some(fs_win);
+  }
+
+  match target {
+    TilingContainer::TilingWindow(_) => Some(target.clone().into()),
+    TilingContainer::Split(split) => split
+      .descendant_in_direction(&direction.inverse())
+      .map(Into::into),
+  }
+}
+
 /// Gets a focus target within the current workspace. Traverse upwards from
 /// the origin container to find an adjacent container that can be focused.
 fn tiling_focus_target(
@@ -126,67 +206,13 @@ fn tiling_focus_target(
     }
 
     // Get the next/prev tiling sibling depending on the tiling direction.
-    let focus_target = match direction {
-      Direction::Up | Direction::Left => origin_or_ancestor
-        .prev_siblings()
-        .find_map(|c| c.as_tiling_container().ok()),
-      _ => origin_or_ancestor
-        .next_siblings()
-        .find_map(|c| c.as_tiling_container().ok()),
-    };
-
-    if let Some(target) = focus_target {
-      // If the target column has an active fullscreen window, focus that fullscreen window.
-      if let Some(ws) = origin_or_ancestor.workspace() {
-        let fullscreen_target = ws
-          .children()
-          .into_iter()
-          .filter_map(|c| c.as_non_tiling_window().cloned())
-          .find(|w| {
-            matches!(w.state(), WindowState::Fullscreen(_))
-              && w.insertion_target().is_some_and(|it| it.target_parent.id() == target.id())
-          });
-
-        if let Some(fs_win) = fullscreen_target {
-          return Ok(Some(fs_win.into()));
-        }
-      }
-
-      // Return once a suitable focus target is found.
-      return Ok(match target {
-        TilingContainer::TilingWindow(_) => Some(target.into()),
-        TilingContainer::Split(split) => split
-          .descendant_in_direction(&direction.inverse())
-          .map(Into::into),
-      });
+    if let Some(target) = get_adjacent_tiling_sibling(&origin_or_ancestor, direction) {
+      return Ok(resolve_tiling_target(&target, &origin_or_ancestor, direction));
     }
 
     // Check if an adjacent column is in fullscreen mode.
-    if matches!(direction, Direction::Left | Direction::Right)
-      && let Some(ws) = origin_or_ancestor.workspace()
-    {
-      let fullscreen_target = ws
-        .children()
-        .into_iter()
-        .filter_map(|c| c.as_non_tiling_window().cloned())
-        .find(|w| {
-          if !matches!(w.state(), WindowState::Fullscreen(_)) {
-            return false;
-          }
-          w.insertion_target().is_some_and(|target| match direction {
-            Direction::Left => origin_or_ancestor
-              .prev_siblings()
-              .any(|s| s.id() == target.target_parent.id()),
-            Direction::Right => origin_or_ancestor
-              .next_siblings()
-              .any(|s| s.id() == target.target_parent.id()),
-            _ => false,
-          })
-        });
-
-      if let Some(fs_win) = fullscreen_target {
-        return Ok(Some(fs_win.into()));
-      }
+    if let Some(fs_win) = find_adjacent_fullscreen_window(&origin_or_ancestor, direction) {
+      return Ok(Some(fs_win));
     }
 
     origin_or_ancestor = parent.into();

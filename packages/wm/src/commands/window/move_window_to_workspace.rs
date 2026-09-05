@@ -9,13 +9,136 @@ use crate::{
     },
     workspace::activate_workspace,
   },
-  models::{SplitContainer, WindowContainer, WorkspaceTarget},
+  models::{
+    Monitor, SplitContainer, WindowContainer, Workspace, WorkspaceTarget,
+  },
   traits::{CommonGetters, PositionGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
 };
 
-#[allow(clippy::too_many_lines)]
+fn resolve_target_workspace(
+  current_workspace: &Workspace,
+  target: WorkspaceTarget,
+  state: &mut WmState,
+  config: &UserConfig,
+) -> anyhow::Result<Option<Workspace>> {
+  let (target_workspace_name, target_workspace) =
+    state.workspace_by_target(current_workspace, target, config)?;
+
+  match target_workspace {
+    Some(_) => Ok(target_workspace),
+    None => match target_workspace_name {
+      Some(name) => {
+        activate_workspace(Some(&name), None, state, config)?;
+        Ok(state.workspace_by_name(&name))
+      }
+      None => Ok(None),
+    },
+  }
+}
+
+fn adjust_window_for_target_monitor(
+  window: &WindowContainer,
+  current_monitor: &Monitor,
+  target_monitor: &Monitor,
+  target_workspace: &Workspace,
+) -> anyhow::Result<()> {
+  if current_monitor.has_dpi_difference(&target_monitor.clone().into())? {
+    window.set_has_pending_dpi_adjustment(true);
+  }
+
+  if target_monitor.id() != current_monitor.id() {
+    window.set_floating_placement(
+      window
+        .floating_placement()
+        .translate_to_center(&target_workspace.to_rect()?),
+    );
+  }
+
+  if let WindowContainer::NonTilingWindow(non_tiling) = window {
+    non_tiling.set_insertion_target(None);
+  }
+
+  Ok(())
+}
+
+fn insert_window_into_workspace(
+  window: &WindowContainer,
+  target_workspace: &Workspace,
+  state: &mut WmState,
+  config: &UserConfig,
+) -> anyhow::Result<()> {
+  let insertion_sibling = target_workspace
+    .descendant_focus_order()
+    .filter_map(|descendant| descendant.as_window_container().ok())
+    .find(|descendant| descendant.state() == WindowState::Tiling);
+
+  match (window.is_tiling_window(), insertion_sibling) {
+    (true, Some(sibling)) => {
+      move_container_within_tree(
+        &window.clone().into(),
+        &sibling.clone().parent().context("No parent.")?,
+        sibling.index() + 1,
+        state,
+      )?;
+    }
+    (true, None) => {
+      let split_container = SplitContainer::new(
+        TilingDirection::Vertical,
+        config.value.gaps.clone(),
+      );
+      attach_container(
+        &split_container.clone().into(),
+        &target_workspace.clone().into(),
+        None,
+      )?;
+      move_container_within_tree(
+        &window.clone().into(),
+        &split_container.into(),
+        0,
+        state,
+      )?;
+    }
+    (false, _) => {
+      move_container_within_tree(
+        &window.clone().into(),
+        &target_workspace.clone().into(),
+        target_workspace.child_count(),
+        state,
+      )?;
+    }
+  }
+
+  Ok(())
+}
+
+fn queue_move_workspace_sync(
+  window: WindowContainer,
+  current_workspace: &Workspace,
+  target_workspace: &Workspace,
+  state: &mut WmState,
+) {
+  set_focused_descendant(&window.clone().into(), None);
+  state.pending_sync.queue_focus_change().queue_cursor_jump();
+
+  match window {
+    WindowContainer::NonTilingWindow(_) => {
+      state.pending_sync.queue_container_to_redraw(window);
+    }
+    WindowContainer::TilingWindow(_) => {
+      state
+        .pending_sync
+        .queue_containers_to_redraw(current_workspace.tiling_children())
+        .queue_containers_to_redraw(target_workspace.tiling_children());
+    }
+  }
+
+  state
+    .pending_sync
+    .queue_workspace_to_reorder(target_workspace.clone());
+}
+
 pub fn move_window_to_workspace(
   window: WindowContainer,
   target: WorkspaceTarget,
@@ -26,138 +149,52 @@ pub fn move_window_to_workspace(
   let current_monitor =
     current_workspace.monitor().context("No monitor.")?;
 
-  let (target_workspace_name, target_workspace) =
-    state.workspace_by_target(&current_workspace, target, config)?;
+  let Some(target_workspace) =
+    resolve_target_workspace(&current_workspace, target, state, config)?
+  else {
+    return Ok(());
+  };
 
-  // Retrieve or activate the target workspace by its name.
-  let target_workspace = match target_workspace {
-    Some(_) => anyhow::Ok(target_workspace),
-    _ => match target_workspace_name {
-      Some(name) => {
-        activate_workspace(Some(&name), None, state, config)?;
-
-        Ok(state.workspace_by_name(&name))
-      }
-      _ => Ok(None),
-    },
-  }?;
-
-  if let Some(target_workspace) = target_workspace {
-    if target_workspace.id() == current_workspace.id() {
-      return Ok(());
-    }
-
-    info!(
-      "Moving window to workspace: '{}'.",
-      target_workspace.config().name
-    );
-
-    let target_monitor =
-      target_workspace.monitor().context("No monitor.")?;
-
-    // Since target workspace could be on a different monitor, adjustments
-    // might need to be made because of DPI.
-    if current_monitor
-      .has_dpi_difference(&target_monitor.clone().into())?
-    {
-      window.set_has_pending_dpi_adjustment(true);
-    }
-
-    // Update floating placement if the window has to cross monitors.
-    if target_monitor.id() != current_monitor.id() {
-      window.set_floating_placement(
-        window
-          .floating_placement()
-          .translate_to_center(&target_workspace.to_rect()?),
-      );
-    }
-
-    if let WindowContainer::NonTilingWindow(window) = &window {
-      window.set_insertion_target(None);
-    }
-
-    let focus_reset_target = if target_workspace.is_displayed() {
-      None
-    } else {
-      target_monitor.descendant_focus_order().next()
-    };
-
-    let insertion_sibling = target_workspace
-      .descendant_focus_order()
-      .filter_map(|descendant| descendant.as_window_container().ok())
-      .find(|descendant| descendant.state() == WindowState::Tiling);
-
-    // Insert the window into the target workspace.
-    match (window.is_tiling_window(), insertion_sibling.is_some()) {
-      (true, true) => {
-        if let Some(insertion_sibling) = insertion_sibling {
-          move_container_within_tree(
-            &window.clone().into(),
-            &insertion_sibling.clone().parent().context("No parent.")?,
-            insertion_sibling.index() + 1,
-            state,
-          )?;
-        }
-      }
-      (true, false) => {
-        let split_container = SplitContainer::new(
-          TilingDirection::Vertical,
-          config.value.gaps.clone(),
-        );
-        attach_container(
-          &split_container.clone().into(),
-          &target_workspace.clone().into(),
-          None,
-        )?;
-        move_container_within_tree(
-          &window.clone().into(),
-          &split_container.into(),
-          0,
-          state,
-        )?;
-      }
-      _ => {
-        move_container_within_tree(
-          &window.clone().into(),
-          &target_workspace.clone().into(),
-          target_workspace.child_count(),
-          state,
-        )?;
-      }
-    }
-
-    // When moving a focused window within the tree to another workspace,
-    // the target workspace will get displayed. If moving the window e.g.
-    // from monitor 1 -> 2, and the target workspace is hidden on that
-    // monitor, we want to reset focus to the workspace that was displayed
-    // on that monitor.
-    if let Some(focus_reset_target) = focus_reset_target {
-      set_focused_descendant(
-        &focus_reset_target,
-        Some(&target_monitor.into()),
-      );
-    }
-
-    // Follow focus to the moved window on the target workspace/monitor.
-    set_focused_descendant(&window.clone().into(), None);
-    state.pending_sync.queue_focus_change().queue_cursor_jump();
-
-    match window {
-      WindowContainer::NonTilingWindow(_) => {
-        state.pending_sync.queue_container_to_redraw(window);
-      }
-      WindowContainer::TilingWindow(_) => {
-        state
-          .pending_sync
-          .queue_containers_to_redraw(current_workspace.tiling_children())
-          .queue_containers_to_redraw(target_workspace.tiling_children());
-      }
-    }
-
-    state
-      .pending_sync
-      .queue_workspace_to_reorder(target_workspace);
+  if target_workspace.id() == current_workspace.id() {
+    return Ok(());
   }
+
+  info!(
+    "Moving window to workspace: '{}'.",
+    target_workspace.config().name
+  );
+
+  let target_monitor =
+    target_workspace.monitor().context("No monitor.")?;
+
+  adjust_window_for_target_monitor(
+    &window,
+    &current_monitor,
+    &target_monitor,
+    &target_workspace,
+  )?;
+
+  let focus_reset_target = if target_workspace.is_displayed() {
+    None
+  } else {
+    target_monitor.descendant_focus_order().next()
+  };
+
+  insert_window_into_workspace(&window, &target_workspace, state, config)?;
+
+  if let Some(focus_reset_target) = focus_reset_target {
+    set_focused_descendant(
+      &focus_reset_target,
+      Some(&target_monitor.into()),
+    );
+  }
+
+  queue_move_workspace_sync(
+    window,
+    &current_workspace,
+    &target_workspace,
+    state,
+  );
 
   Ok(())
 }

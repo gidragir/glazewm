@@ -25,7 +25,7 @@ glazewm/ (workspace root, Rust 2024)
 ├── artifacts/          # Architecture design iterations and backlog items
 │   ├── idea/           # Iteration designs 1-7 (Niri layout, presets, consume/expel, multi-monitor isolation)
 │   └── backlog/        # Future feature proposals (e.g. Zebar minimap indicator)
-└── resources/          # Packaging scripts, default configs, and icons
+└── resources/          # Packaging scripts, build support (winres), default configs, and icons
 ```
 
 ### Crate Breakdown & Responsibilities
@@ -118,17 +118,32 @@ The repository uses **`mise`** for unified development tasks and **`cargo-xwin`*
 ### Mise Task Runners
 
 ```bash
-mise run check       # Fast type checking (x86_64-pc-windows-gnu)
-mise run clippy      # Run strict clippy lints across all crates
-mise run test        # Run unit tests
-mise run build       # Build release binary (glazewm.exe)
-mise run build:all   # Build all workspace binaries
-mise run deploy      # Copy release binaries to /srv/Shared/ for VM testing
-mise run release     # Build all workspace binaries + deploy to /srv/Shared/
-mise run sonar:status # Check SonarCloud quality gate status
-mise run sonar:summary # Print issue summary grouped by rule & severity
-mise run sonar:issues # List open SonarCloud issues
+mise run check          # Fast type checking (x86_64-pc-windows-gnu)
+mise run check:msvc     # Type checking using MSVC target (x86_64-pc-windows-msvc)
+mise run clippy         # Run strict clippy lints across all crates
+mise run test           # Run unit tests (wm, wm-common, wm-ipc-client) under Wine
+mise run test:fast      # Run unit tests with fast profile (incremental + optimized dependencies)
+mise run test:perf      # Run tests with high-performance profile (opt-level 3, thin LTO)
+mise run benchmark      # Run layout and event loop performance benchmarks
+mise run verify         # Comprehensive verification (check + clippy + test)
+mise run build:debug    # Build debug binary (glazewm.exe) with MSVC target
+mise run build          # Build release binary (glazewm.exe) with MSVC target
+mise run build:all      # Build all workspace packages in release mode
+mise run deploy         # Copy release binaries to /srv/Shared/ for VM testing
+mise run release        # Build all workspace binaries + deploy to /srv/Shared/
+mise run sonar:status   # Check SonarCloud quality gate status
+mise run sonar:summary  # Print issue summary grouped by rule & severity
+mise run sonar:issues   # List open SonarCloud issues
+mise run sonar:duplications # List and inspect code duplications
 ```
+
+### Cargo Profiles & Compilation Optimization
+
+The workspace defines tuned compilation profiles in [`Cargo.toml`](file:///Cargo.toml):
+- **Development & Test Acceleration**: Both `[profile.dev]` and `[profile.test]` set `codegen-units = 256` for maximum parallel codegen. Furthermore, external dependencies are compiled with `opt-level = 2` via `[profile.dev.package."*"]` and `[profile.test.package."*"]`. This keeps workspace crate compilation fast (`opt-level = 0`) while executing CPU-heavy dependencies (parsing, regex, serialization, Tokio runtime) at near-native speed during test runs.
+- **`test-fast` Profile**: Inherits from `test`, enables `incremental = true`, `debug = 1`, and `codegen-units = 256` for rapid test turnaround (`mise run test:fast`).
+- **`test-perf` Profile**: Inherits from `release`, with `opt-level = 3`, `debug = 1` (line tables for profiling), `lto = "thin"`, `codegen-units = 16`, `panic = "unwind"`, and `strip = "none"`. Used for latency-sensitive benchmarks and throughput tests (`mise run benchmark`, `mise run test:perf`).
+- **Windows Resource Compilation (`resources/build_support/winres.rs`)**: Windows resource embedding (`tauri-winres`) is centralized in a shared build helper across `packages/wm/build.rs`, `packages/wm-cli/build.rs`, and `packages/wm-watcher/build.rs` to configure application icons, manifests, and version metadata from `VERSION_NUMBER` without duplication.
 
 ### Direct Cargo & Cross-Compilation Commands
 
@@ -136,9 +151,21 @@ mise run sonar:issues # List open SonarCloud issues
 # Fast check using GNU target (Linux-friendly)
 cargo check --target x86_64-pc-windows-gnu
 
+# Check using MSVC target
+cargo check --target x86_64-pc-windows-msvc
+
 # Check specific crate
 cargo check -p wm --target x86_64-pc-windows-gnu
 cargo check -p wm-common --target x86_64-pc-windows-gnu
+
+# Fast unit testing under Wine (using test-fast profile)
+CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test --profile test-fast -p wm -p wm-common -p wm-ipc-client --target x86_64-pc-windows-msvc
+
+# Performance benchmarks under Wine (using test-perf profile)
+CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=wine cargo xwin test --profile test-perf -p wm --target x86_64-pc-windows-msvc -- benchmark --nocapture
+
+# Build MSVC debug binary
+cargo xwin build -p wm --target x86_64-pc-windows-msvc
 
 # Build MSVC release binary (main glazewm daemon)
 cargo xwin build --release -p wm --target x86_64-pc-windows-msvc
@@ -209,6 +236,10 @@ python3 resources/scripts/sonar.py issues --file packages/wm/src/wm.rs
 
 # View detailed rule documentation & remediation guidance
 python3 resources/scripts/sonar.py rule rust:S3776
+
+# Inspect code duplications and exact matching blocks
+mise run sonar:duplications
+python3 resources/scripts/sonar.py duplications --details
 
 # Parse raw MCP tool output JSON without writing custom parsing scripts
 python3 resources/scripts/sonar.py parse-mcp path/to/mcp_output.json

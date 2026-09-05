@@ -6,7 +6,7 @@ use tracing::Level;
 use uuid::Uuid;
 use wm_platform::{Delta, Direction, LengthValue, OpacityValue};
 
-use crate::TilingDirection;
+use crate::{TilingDirection, WorkspaceTarget};
 
 const VERSION: &str = env!("VERSION_NUMBER");
 
@@ -323,25 +323,9 @@ pub struct InvokeAdjustBordersCommand {
   pub left: Option<LengthValue>,
 }
 
-#[derive(Args, Clone, Debug, PartialEq, Serialize)]
-#[group(required = true, multiple = false)]
+#[derive(Args, Clone, Debug, Default, PartialEq, Eq, Serialize)]
 #[allow(clippy::struct_excessive_bools)]
-pub struct InvokeFocusCommand {
-  #[clap(long)]
-  pub direction: Option<Direction>,
-
-  #[clap(long)]
-  pub container_id: Option<Uuid>,
-
-  #[clap(long)]
-  pub workspace_in_direction: Option<Direction>,
-
-  #[clap(long)]
-  pub workspace: Option<String>,
-
-  #[clap(long)]
-  pub monitor: Option<usize>,
-
+pub struct WorkspaceTargetArgs {
   #[clap(long)]
   pub next_active_workspace: bool,
 
@@ -364,9 +348,100 @@ pub struct InvokeFocusCommand {
   pub recent_workspace: bool,
 }
 
+impl WorkspaceTargetArgs {
+  #[must_use]
+  pub fn to_workspace_target(&self) -> Option<WorkspaceTarget> {
+    if self.next_active_workspace {
+      Some(WorkspaceTarget::NextActive)
+    } else if self.prev_active_workspace {
+      Some(WorkspaceTarget::PreviousActive)
+    } else if self.next_workspace {
+      Some(WorkspaceTarget::Next)
+    } else if self.prev_workspace {
+      Some(WorkspaceTarget::Previous)
+    } else if self.recent_workspace {
+      Some(WorkspaceTarget::Recent)
+    } else if self.next_active_workspace_on_monitor {
+      Some(WorkspaceTarget::NextActiveInMonitor)
+    } else if self.prev_active_workspace_on_monitor {
+      Some(WorkspaceTarget::PreviousActiveInMonitor)
+    } else {
+      None
+    }
+  }
+}
+
 #[derive(Args, Clone, Debug, PartialEq, Serialize)]
-#[group(required = true, multiple = false)]
-#[allow(clippy::struct_excessive_bools)]
+#[clap(group(
+  clap::ArgGroup::new("focus_target")
+    .required(true)
+    .multiple(false)
+    .args([
+      "direction",
+      "container_id",
+      "workspace_in_direction",
+      "workspace",
+      "monitor",
+      "next_active_workspace",
+      "prev_active_workspace",
+      "next_workspace",
+      "prev_workspace",
+      "next_active_workspace_on_monitor",
+      "prev_active_workspace_on_monitor",
+      "recent_workspace",
+    ])
+))]
+pub struct InvokeFocusCommand {
+  #[clap(long)]
+  pub direction: Option<Direction>,
+
+  #[clap(long)]
+  pub container_id: Option<Uuid>,
+
+  #[clap(long)]
+  pub workspace_in_direction: Option<Direction>,
+
+  #[clap(long)]
+  pub workspace: Option<String>,
+
+  #[clap(long)]
+  pub monitor: Option<usize>,
+
+  #[command(flatten)]
+  pub workspace_target: WorkspaceTargetArgs,
+}
+
+impl InvokeFocusCommand {
+  #[must_use]
+  pub fn to_workspace_target(&self) -> Option<WorkspaceTarget> {
+    if let Some(direction) = &self.workspace_in_direction {
+      Some(WorkspaceTarget::Direction(direction.clone()))
+    } else if let Some(name) = &self.workspace {
+      Some(WorkspaceTarget::Name(name.clone()))
+    } else {
+      self.workspace_target.to_workspace_target()
+    }
+  }
+}
+
+#[derive(Args, Clone, Debug, PartialEq, Serialize)]
+#[clap(group(
+  clap::ArgGroup::new("move_target")
+    .required(true)
+    .multiple(false)
+    .args([
+      "direction",
+      "workspace_in_direction",
+      "workspace",
+      "next_active_workspace",
+      "prev_active_workspace",
+      "next_workspace",
+      "prev_workspace",
+      "next_active_workspace_on_monitor",
+      "prev_active_workspace_on_monitor",
+      "recent_workspace",
+    ])
+))]
 pub struct InvokeMoveCommand {
   /// Direction to move the window.
   #[clap(long)]
@@ -380,26 +455,21 @@ pub struct InvokeMoveCommand {
   #[clap(long)]
   pub workspace: Option<String>,
 
-  #[clap(long)]
-  pub next_active_workspace: bool,
+  #[command(flatten)]
+  pub workspace_target: WorkspaceTargetArgs,
+}
 
-  #[clap(long)]
-  pub prev_active_workspace: bool,
-
-  #[clap(long)]
-  pub next_workspace: bool,
-
-  #[clap(long)]
-  pub prev_workspace: bool,
-
-  #[clap(long)]
-  pub next_active_workspace_on_monitor: bool,
-
-  #[clap(long)]
-  pub prev_active_workspace_on_monitor: bool,
-
-  #[clap(long)]
-  pub recent_workspace: bool,
+impl InvokeMoveCommand {
+  #[must_use]
+  pub fn to_workspace_target(&self) -> Option<WorkspaceTarget> {
+    if let Some(direction) = &self.workspace_in_direction {
+      Some(WorkspaceTarget::Direction(direction.clone()))
+    } else if let Some(name) = &self.workspace {
+      Some(WorkspaceTarget::Name(name.clone()))
+    } else {
+      self.workspace_target.to_workspace_target()
+    }
+  }
 }
 
 #[derive(Args, Clone, Debug, PartialEq, Serialize)]

@@ -45,7 +45,7 @@ use crate::{
     handle_window_title_changed,
   },
   ipc_server::IpcServer,
-  models::{Container, WindowContainer, WorkspaceTarget},
+  models::{Container, WindowContainer},
   traits::{CommonGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
@@ -332,64 +332,16 @@ fn execute_focus_command(
     focus_in_direction(subject_container, direction, state)?;
   }
 
-  if let Some(direction) = &args.workspace_in_direction {
-    focus_workspace(
-      WorkspaceTarget::Direction(direction.clone()),
-      state,
-      config,
-    )?;
-  }
-
   if let Some(container_id) = &args.container_id {
     focus_container_by_id(container_id, state)?;
-  }
-
-  if let Some(name) = &args.workspace {
-    focus_workspace(
-      WorkspaceTarget::Name(name.clone()),
-      state,
-      config,
-    )?;
   }
 
   if let Some(monitor_index) = &args.monitor {
     focus_monitor(*monitor_index, state, config)?;
   }
 
-  if args.next_active_workspace {
-    focus_workspace(WorkspaceTarget::NextActive, state, config)?;
-  }
-
-  if args.prev_active_workspace {
-    focus_workspace(WorkspaceTarget::PreviousActive, state, config)?;
-  }
-
-  if args.next_workspace {
-    focus_workspace(WorkspaceTarget::Next, state, config)?;
-  }
-
-  if args.prev_workspace {
-    focus_workspace(WorkspaceTarget::Previous, state, config)?;
-  }
-
-  if args.recent_workspace {
-    focus_workspace(WorkspaceTarget::Recent, state, config)?;
-  }
-
-  if args.next_active_workspace_on_monitor {
-    focus_workspace(
-      WorkspaceTarget::NextActiveInMonitor,
-      state,
-      config,
-    )?;
-  }
-
-  if args.prev_active_workspace_on_monitor {
-    focus_workspace(
-      WorkspaceTarget::PreviousActiveInMonitor,
-      state,
-      config,
-    )?;
+  if let Some(target) = args.to_workspace_target() {
+    focus_workspace(target, state, config)?;
   }
 
   Ok(())
@@ -410,85 +362,8 @@ fn execute_move_command(
     )?;
   }
 
-  if let Some(direction) = &args.workspace_in_direction {
-    move_window_to_workspace(
-      window.clone(),
-      WorkspaceTarget::Direction(direction.clone()),
-      state,
-      config,
-    )?;
-  }
-
-  if let Some(name) = &args.workspace {
-    move_window_to_workspace(
-      window.clone(),
-      WorkspaceTarget::Name(name.clone()),
-      state,
-      config,
-    )?;
-  }
-
-  if args.next_active_workspace {
-    move_window_to_workspace(
-      window.clone(),
-      WorkspaceTarget::NextActive,
-      state,
-      config,
-    )?;
-  }
-
-  if args.prev_active_workspace {
-    move_window_to_workspace(
-      window.clone(),
-      WorkspaceTarget::PreviousActive,
-      state,
-      config,
-    )?;
-  }
-
-  if args.next_workspace {
-    move_window_to_workspace(
-      window.clone(),
-      WorkspaceTarget::Next,
-      state,
-      config,
-    )?;
-  }
-
-  if args.prev_workspace {
-    move_window_to_workspace(
-      window.clone(),
-      WorkspaceTarget::Previous,
-      state,
-      config,
-    )?;
-  }
-
-  if args.recent_workspace {
-    move_window_to_workspace(
-      window.clone(),
-      WorkspaceTarget::Recent,
-      state,
-      config,
-    )?;
-  }
-
-  if args.next_active_workspace_on_monitor {
-    move_window_to_workspace(
-      window.clone(),
-      WorkspaceTarget::NextActiveInMonitor,
-      state,
-      config,
-    )?;
-  }
-
-  if args.prev_active_workspace_on_monitor {
-    move_window_to_workspace(
-      window,
-      WorkspaceTarget::PreviousActiveInMonitor,
-      state,
-      config,
-    )?;
+  if let Some(target) = args.to_workspace_target() {
+    move_window_to_workspace(window, target, state, config)?;
   }
 
   Ok(())

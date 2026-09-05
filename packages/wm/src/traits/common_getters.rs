@@ -418,63 +418,73 @@ impl Iterator for DescendantFocusOrder {
   }
 }
 
+/// Internal macro providing shared container getter implementations for both
+/// branch and leaf containers.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __impl_common_container_getters_base {
+  ($struct_name:ident) => {
+    fn id(&self) -> ::uuid::Uuid {
+      self.0.borrow().id
+    }
+
+    fn as_container(&self) -> $crate::models::Container {
+      self.clone().into()
+    }
+
+    fn as_tiling_container(
+      &self,
+    ) -> anyhow::Result<$crate::models::TilingContainer> {
+      TryInto::<$crate::models::TilingContainer>::try_into(
+        self.as_container(),
+      )
+      .map_err(anyhow::Error::msg)
+    }
+
+    fn as_window_container(
+      &self,
+    ) -> anyhow::Result<$crate::models::WindowContainer> {
+      TryInto::<$crate::models::WindowContainer>::try_into(
+        self.as_container(),
+      )
+      .map_err(anyhow::Error::msg)
+    }
+
+    fn as_direction_container(
+      &self,
+    ) -> anyhow::Result<$crate::models::DirectionContainer> {
+      TryInto::<$crate::models::DirectionContainer>::try_into(
+        self.as_container(),
+      )
+      .map_err(anyhow::Error::msg)
+    }
+
+    fn to_dto(&self) -> anyhow::Result<::wm_common::ContainerDto> {
+      self.to_dto()
+    }
+
+    fn parent(&self) -> Option<$crate::models::Container> {
+      self
+        .0
+        .borrow()
+        .parent
+        .as_ref()
+        .and_then($crate::models::WeakContainer::upgrade)
+    }
+
+    fn set_parent(&self, parent: Option<&$crate::models::Container>) {
+      self.0.borrow_mut().parent =
+        parent.map($crate::models::WeakContainer::from_container);
+    }
+  };
+}
+
 /// Implements the `CommonGetters` trait for a branch container struct.
 #[macro_export]
 macro_rules! impl_common_getters {
   ($struct_name:ident) => {
     impl CommonGetters for $struct_name {
-      fn id(&self) -> ::uuid::Uuid {
-        self.0.borrow().id
-      }
-
-      fn as_container(&self) -> $crate::models::Container {
-        self.clone().into()
-      }
-
-      fn as_tiling_container(
-        &self,
-      ) -> anyhow::Result<$crate::models::TilingContainer> {
-        TryInto::<$crate::models::TilingContainer>::try_into(
-          self.as_container(),
-        )
-        .map_err(anyhow::Error::msg)
-      }
-
-      fn as_window_container(
-        &self,
-      ) -> anyhow::Result<$crate::models::WindowContainer> {
-        TryInto::<$crate::models::WindowContainer>::try_into(
-          self.as_container(),
-        )
-        .map_err(anyhow::Error::msg)
-      }
-
-      fn as_direction_container(
-        &self,
-      ) -> anyhow::Result<$crate::models::DirectionContainer> {
-        TryInto::<$crate::models::DirectionContainer>::try_into(
-          self.as_container(),
-        )
-        .map_err(anyhow::Error::msg)
-      }
-
-      fn to_dto(&self) -> anyhow::Result<::wm_common::ContainerDto> {
-        self.to_dto()
-      }
-
-      fn parent(&self) -> Option<$crate::models::Container> {
-        self
-          .0
-          .borrow()
-          .parent
-          .as_ref()
-          .and_then($crate::models::WeakContainer::upgrade)
-      }
-
-      fn set_parent(&self, parent: Option<&$crate::models::Container>) {
-        self.0.borrow_mut().parent =
-          parent.map($crate::models::WeakContainer::from_container);
-      }
+      $crate::__impl_common_container_getters_base!($struct_name);
 
       fn children(
         &self,
@@ -556,58 +566,7 @@ macro_rules! impl_common_getters {
 macro_rules! impl_leaf_common_getters {
   ($struct_name:ident) => {
     impl CommonGetters for $struct_name {
-      fn id(&self) -> ::uuid::Uuid {
-        self.0.borrow().id
-      }
-
-      fn as_container(&self) -> $crate::models::Container {
-        self.clone().into()
-      }
-
-      fn as_tiling_container(
-        &self,
-      ) -> anyhow::Result<$crate::models::TilingContainer> {
-        TryInto::<$crate::models::TilingContainer>::try_into(
-          self.as_container(),
-        )
-        .map_err(anyhow::Error::msg)
-      }
-
-      fn as_window_container(
-        &self,
-      ) -> anyhow::Result<$crate::models::WindowContainer> {
-        TryInto::<$crate::models::WindowContainer>::try_into(
-          self.as_container(),
-        )
-        .map_err(anyhow::Error::msg)
-      }
-
-      fn as_direction_container(
-        &self,
-      ) -> anyhow::Result<$crate::models::DirectionContainer> {
-        TryInto::<$crate::models::DirectionContainer>::try_into(
-          self.as_container(),
-        )
-        .map_err(anyhow::Error::msg)
-      }
-
-      fn to_dto(&self) -> anyhow::Result<::wm_common::ContainerDto> {
-        self.to_dto()
-      }
-
-      fn parent(&self) -> Option<$crate::models::Container> {
-        self
-          .0
-          .borrow()
-          .parent
-          .as_ref()
-          .and_then($crate::models::WeakContainer::upgrade)
-      }
-
-      fn set_parent(&self, parent: Option<&$crate::models::Container>) {
-        self.0.borrow_mut().parent =
-          parent.map($crate::models::WeakContainer::from_container);
-      }
+      $crate::__impl_common_container_getters_base!($struct_name);
 
       fn children(
         &self,

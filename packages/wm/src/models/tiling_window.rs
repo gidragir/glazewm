@@ -7,7 +7,7 @@ use anyhow::Context;
 use uuid::Uuid;
 use wm_common::{
   ActiveDrag, ContainerDto, DisplayState, GapsConfig, TilingDirection,
-  WindowDto, WindowRuleConfig, WindowState,
+  WindowRuleConfig, WindowState,
 };
 use wm_platform::{NativeWindow, Rect, RectDelta};
 
@@ -102,30 +102,7 @@ impl TilingWindow {
   }
 
   pub fn to_dto(&self) -> anyhow::Result<ContainerDto> {
-    let rect = self.to_rect()?;
-
-    Ok(ContainerDto::Window(WindowDto {
-      id: self.id(),
-      parent_id: self.parent().map(|parent| parent.id()),
-      has_focus: self.has_focus(None),
-      tiling_size: Some(self.tiling_size()),
-      width: rect.width(),
-      height: rect.height(),
-      x: rect.x(),
-      y: rect.y(),
-      state: self.state(),
-      prev_state: self.prev_state(),
-      display_state: self.display_state(),
-      border_delta: self.border_delta(),
-      floating_placement: self.floating_placement(),
-      #[allow(clippy::cast_possible_wrap, clippy::unnecessary_cast)]
-      handle: self.native().id().0 as isize,
-      title: self.native_properties().title,
-      #[cfg(target_os = "windows")]
-      class_name: self.native_properties().class_name,
-      process_name: self.native_properties().process_name,
-      active_drag: self.active_drag(),
-    }))
+    crate::traits::window_to_dto(self, Some(self.tiling_size()))
   }
 }
 

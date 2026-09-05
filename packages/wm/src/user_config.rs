@@ -108,6 +108,15 @@ impl UserConfig {
   fn default_window_rules(
     config_value: &ParsedConfig,
   ) -> Vec<WindowRuleConfig> {
+    const DEFAULT_IGNORE_PROCESSES: &[&str] = &[
+      "SearchApp",
+      "SearchHost",
+      "ShellExperienceHost",
+      "StartMenuExperienceHost", // W10/11 start menu.
+      "ScreenClippingHost",      // W10/11 screen snipping tool.
+      "LockApp",                 // W11 lock screen.
+    ];
+
     let mut window_rules = Vec::new();
 
     let floating_defaults =
@@ -143,50 +152,22 @@ impl UserConfig {
       run_once: true,
     });
 
-    // Default ignore rules.
+    // Default ignore rules for Windows system components.
+
+
+    let match_window = DEFAULT_IGNORE_PROCESSES
+      .iter()
+      .map(|process| WindowMatchConfig {
+        window_process: Some(MatchType::Equals {
+          equals: (*process).to_string(),
+        }),
+        ..WindowMatchConfig::default()
+      })
+      .collect();
+
     window_rules.push(WindowRuleConfig {
       commands: vec![InvokeCommand::Ignore],
-      match_window: vec![
-        WindowMatchConfig {
-          window_process: Some(MatchType::Equals {
-            equals: "SearchApp".to_string(),
-          }),
-          ..WindowMatchConfig::default()
-        },
-        WindowMatchConfig {
-          window_process: Some(MatchType::Equals {
-            equals: "SearchHost".to_string(),
-          }),
-          ..WindowMatchConfig::default()
-        },
-        WindowMatchConfig {
-          window_process: Some(MatchType::Equals {
-            equals: "ShellExperienceHost".to_string(),
-          }),
-          ..WindowMatchConfig::default()
-        },
-        WindowMatchConfig {
-          window_process: Some(MatchType::Equals {
-            // W10/11 start menu.
-            equals: "StartMenuExperienceHost".to_string(),
-          }),
-          ..WindowMatchConfig::default()
-        },
-        WindowMatchConfig {
-          window_process: Some(MatchType::Equals {
-            // W10/11 screen snipping tool.
-            equals: "ScreenClippingHost".to_string(),
-          }),
-          ..WindowMatchConfig::default()
-        },
-        WindowMatchConfig {
-          window_process: Some(MatchType::Equals {
-            // W11 lock screen.
-            equals: "LockApp".to_string(),
-          }),
-          ..WindowMatchConfig::default()
-        },
-      ],
+      match_window,
       on: vec![WindowRuleEvent::Manage],
       run_once: true,
     });

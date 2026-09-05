@@ -1,14 +1,51 @@
 use std::cell::Ref;
 
 use ambassador::delegatable_trait;
-use wm_common::{ActiveDrag, DisplayState, WindowRuleConfig, WindowState};
+use wm_common::{
+  ActiveDrag, ContainerDto, DisplayState, WindowDto, WindowRuleConfig,
+  WindowState,
+};
 use wm_platform::{LengthValue, NativeWindow, Rect, RectDelta};
 
 use crate::{
   models::{NativeWindowProperties, Workspace},
-  traits::CommonGetters,
+  traits::{CommonGetters, PositionGetters},
   user_config::UserConfig,
 };
+
+/// Builds a `ContainerDto::Window` representation for any window container.
+pub fn window_to_dto<W>(
+  window: &W,
+  tiling_size: Option<f32>,
+) -> anyhow::Result<ContainerDto>
+where
+  W: WindowGetters + PositionGetters,
+{
+  let rect = window.to_rect()?;
+
+  Ok(ContainerDto::Window(WindowDto {
+    id: window.id(),
+    parent_id: window.parent().map(|parent| parent.id()),
+    has_focus: window.has_focus(None),
+    tiling_size,
+    width: rect.width(),
+    height: rect.height(),
+    x: rect.x(),
+    y: rect.y(),
+    state: window.state(),
+    prev_state: window.prev_state(),
+    display_state: window.display_state(),
+    border_delta: window.border_delta(),
+    floating_placement: window.floating_placement(),
+    #[allow(clippy::cast_possible_wrap, clippy::unnecessary_cast)]
+    handle: window.native().id().0 as isize,
+    title: window.native_properties().title,
+    #[cfg(target_os = "windows")]
+    class_name: window.native_properties().class_name,
+    process_name: window.native_properties().process_name,
+    active_drag: window.active_drag(),
+  }))
+}
 
 #[delegatable_trait]
 pub trait WindowGetters: CommonGetters {

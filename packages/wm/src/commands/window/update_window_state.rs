@@ -1,12 +1,13 @@
 use anyhow::Context;
 use tracing::{info, warn};
-use wm_common::WindowState;
+use wm_common::{TilingDirection, WindowState};
 
 use crate::{
   commands::container::{
-    move_container_within_tree, replace_container, resize_tiling_container,
+    attach_container, move_container_within_tree, replace_container,
+    resize_tiling_container,
   },
-  models::{Container, InsertionTarget, WindowContainer},
+  models::{Container, InsertionTarget, SplitContainer, WindowContainer},
   traits::{CommonGetters, TilingSizeGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
@@ -77,8 +78,24 @@ fn set_tiling(
 
       Some((focused_window.parent()?, focused_window.index() + 1))
     })
-    // Default to inserting at the end of the workspace.
-    .unwrap_or((workspace.clone().into(), workspace.child_count()));
+    // Default to inserting at the end of the workspace inside a column.
+    .unwrap_or_else(|| {
+      let split_container = SplitContainer::new(
+        TilingDirection::Vertical,
+        config.value.gaps.clone(),
+      );
+      if attach_container(
+        &split_container.clone().into(),
+        &workspace.clone().into(),
+        None,
+      )
+      .is_ok()
+      {
+        (split_container.into(), 0)
+      } else {
+        (workspace.clone().into(), workspace.child_count())
+      }
+    });
 
   let tiling_window = window.to_tiling(config.value.gaps.clone());
 

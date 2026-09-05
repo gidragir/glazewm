@@ -1,18 +1,21 @@
 use anyhow::Context;
 use tracing::info;
-use wm_common::WindowState;
+use wm_common::{TilingDirection, WindowState};
 
 use crate::{
   commands::{
-    container::{move_container_within_tree, set_focused_descendant},
+    container::{
+      attach_container, move_container_within_tree, set_focused_descendant,
+    },
     workspace::activate_workspace,
   },
-  models::{WindowContainer, WorkspaceTarget},
+  models::{SplitContainer, WindowContainer, WorkspaceTarget},
   traits::{CommonGetters, PositionGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
 };
 
+#[allow(clippy::too_many_lines)]
 pub fn move_window_to_workspace(
   window: WindowContainer,
   target: WorkspaceTarget,
@@ -95,6 +98,23 @@ pub fn move_window_to_workspace(
             state,
           )?;
         }
+      }
+      (true, false) => {
+        let split_container = SplitContainer::new(
+          TilingDirection::Vertical,
+          config.value.gaps.clone(),
+        );
+        attach_container(
+          &split_container.clone().into(),
+          &target_workspace.clone().into(),
+          None,
+        )?;
+        move_container_within_tree(
+          &window.clone().into(),
+          &split_container.into(),
+          0,
+          state,
+        )?;
       }
       _ => {
         move_container_within_tree(

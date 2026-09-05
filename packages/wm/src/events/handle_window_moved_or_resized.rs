@@ -498,11 +498,13 @@ fn update_drag_state(
           .dequeue_container_from_redraw(window.clone());
       }
 
-      // Flatten the parent split container if it only contains the window.
+      // Flatten the parent split container if it only contains the window,
+      // but preserve top-level columns on infinite horizontal canvas.
       // TODO: Consider doing this to `move_container_within_tree`, so that
       // the behavior is consistent.
       if let Some(split_parent) = parent.as_split()
         && split_parent.child_count() == 1
+        && split_parent.parent().is_some_and(|p| p.as_workspace().is_none())
       {
         let root_parent = split_parent.parent();
         flatten_split_container(split_parent.clone())?;

@@ -67,7 +67,12 @@ pub fn handle_window_focused(
       .and_then(|m| m.displayed_workspace())
       .is_some_and(|displayed_ws| displayed_ws.id() == workspace.id());
 
-    if window.display_state() != DisplayState::Shown || !is_on_displayed_workspace {
+    let is_visible = matches!(
+      window.display_state(),
+      DisplayState::Shown | DisplayState::Showing
+    );
+
+    if !is_visible || !is_on_displayed_workspace {
       info!("Prevented unsolicited background focus from: {window}");
       state.pending_sync.queue_focus_change();
       return Ok(());

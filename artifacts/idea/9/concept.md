@@ -1,0 +1,13 @@
+## Definition
+An architectural refinement of the infinite horizontal scrolling window manager integrating inline fullscreen canvas nodes, non-destructive coordinate displacement without geometric squishing, and thread-attached Win32 foreground input synchronization.
+
+## Value Proposition
+Achieves true parity with Wayland/Niri on Windows: windows freely transition into fullscreen while preserving horizontal tiling topology, bidirectional directional focus traverses seamlessly between fullscreen and tiling stacks, offscreen canvas columns remain structurally uncompressed, and multi-monitor focus transfers execute deterministically on first keypress without OS foreground rejection.
+
+## Core Mechanics
+1. **Inline Fullscreen Tiling Topology**: Fullscreen windows retain their membership within the horizontal column strip (or preserve explicit column association). Fullscreen bounds overlay the monitor viewport during rendering without mutating or destroying column hierarchy or ejecting the node into an unreachable non-tiling hierarchy.
+2. **Bidirectional Directional Focus Traversal**: Directional navigation (`focus --direction left/right`) treats fullscreen nodes as valid strip siblings, scrolling the viewport and smoothly transitioning focus to/from adjacent tiling columns.
+3. **Non-Destructive Coordinate Displacement**: Columns extending outside the active monitor viewport maintain 100% of their configured logical dimensions. Partially or fully displaced windows are translated out of the visible screen area or mapped to safe virtual desktop parking coordinates (`SAFE_PARK_X, SAFE_PARK_Y`) without applying pixel-clamping or dispatching resizing `WM_SIZE` events.
+4. **Thread-Attached Foreground Synchronization**: Cross-process and cross-monitor focus changes bind threads via `AttachThreadInput`, assert `AllowSetForegroundWindow(ASFW_ANY)`, release locks via `LockSetForegroundWindow(LSFW_UNLOCK)`, and dispatch `SetForegroundWindow` with zero input drops or taskbar flashing alerts.
+5. **Anti-Steal Focus Guarding**: Focus shifts initiated externally by window signals (e.g. `EVENT_SYSTEM_FOREGROUND` from background applications or multi-stage initialization like 1C/Teams) are validated against current cursor geometry and pending WM operations, rejecting unsolicited steals and restoring active container focus.
+6. **Automatic Column Auto-Wrap on Ingestion**: Workspace transfer commands (`move --workspace <N>`, `set-tiling`) guarantee that windows routed to empty workspaces are automatically enclosed in vertical `SplitContainer` columns rather than attaching directly to workspace roots.

@@ -14,11 +14,10 @@ use windows::{
     System::Threading::GetCurrentThreadId,
     UI::WindowsAndMessaging::{
       CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
-      DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-      LockSetForegroundWindow, LSFW_LOCK, MSG, PostMessageW,
-      PostThreadMessageW, RegisterClassW, RegisterWindowMessageW,
-      SendMessageW, TranslateMessage, WINDOW_EX_STYLE, WM_QUIT, WNDCLASSW,
-      WNDPROC, WS_OVERLAPPEDWINDOW,
+      DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, MSG,
+      PostMessageW, PostThreadMessageW, RegisterClassW,
+      RegisterWindowMessageW, SendMessageW, TranslateMessage,
+      WINDOW_EX_STYLE, WM_QUIT, WNDCLASSW, WNDPROC, WS_OVERLAPPEDWINDOW,
     },
   },
   core::w,
@@ -184,11 +183,6 @@ impl EventLoop {
   /// Implements [`EventLoop::run`].
   pub(crate) fn run(&self) -> crate::Result<()> {
     tracing::info!("Starting event loop.");
-
-    // Lock foreground window against unsolicited background focus stealing.
-    unsafe {
-      _ = LockSetForegroundWindow(LSFW_LOCK);
-    }
 
     let mut msg = MSG::default();
 

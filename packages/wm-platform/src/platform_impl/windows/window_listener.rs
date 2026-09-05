@@ -134,15 +134,10 @@ impl WindowListener {
         window_id: WindowId(handle.0),
         notification,
       },
-      EVENT_SYSTEM_FOREGROUND => {
-        if is_hwnd_cloaked(handle) {
-          return;
-        }
-        WindowEvent::Focused {
-          window: NativeWindow::new(handle.0).into(),
-          notification,
-        }
-      }
+      EVENT_SYSTEM_FOREGROUND => WindowEvent::Focused {
+        window: NativeWindow::new(handle.0).into(),
+        notification,
+      },
       EVENT_OBJECT_HIDE | EVENT_OBJECT_CLOAKED => WindowEvent::Hidden {
         window: NativeWindow::new(handle.0).into(),
         notification,

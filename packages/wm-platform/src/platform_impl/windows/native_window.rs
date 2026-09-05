@@ -9,7 +9,8 @@ use windows::{
       DwmGetWindowAttribute, DwmSetWindowAttribute,
     },
     System::Threading::{
-      OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+      AttachThreadInput, GetCurrentThreadId, OpenProcess,
+      PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
       QueryFullProcessImageNameW,
     },
     UI::{
@@ -17,15 +18,16 @@ use windows::{
         INPUT, INPUT_0, INPUT_MOUSE, MOUSEINPUT, SendInput,
       },
       WindowsAndMessaging::{
-        BeginDeferWindowPos, DeferWindowPos, EndDeferWindowPos,
-        EnumWindows, GA_ROOT, GW_OWNER, GWL_EXSTYLE, GWL_STYLE,
-        GetAncestor, GetClassNameW, GetDesktopWindow, GetForegroundWindow,
+        AllowSetForegroundWindow, ASFW_ANY, BeginDeferWindowPos,
+        DeferWindowPos, EndDeferWindowPos, EnumWindows,
+        GA_ROOT, GW_OWNER, GWL_EXSTYLE, GWL_STYLE, GetAncestor,
+        GetClassNameW, GetDesktopWindow, GetForegroundWindow,
         GetLayeredWindowAttributes, GetShellWindow, GetWindow,
         GetWindowLongPtrW, GetWindowRect, GetWindowTextW,
         GetWindowThreadProcessId, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST,
         IsIconic, IsWindow, IsWindowVisible, IsZoomed,
-        LAYERED_WINDOW_ATTRIBUTES_FLAGS, LWA_ALPHA, LWA_COLORKEY,
-        LockSetForegroundWindow, LSFW_LOCK,
+        LAYERED_WINDOW_ATTRIBUTES_FLAGS, LSFW_UNLOCK, LWA_ALPHA,
+        LWA_COLORKEY, LockSetForegroundWindow,
         SET_WINDOW_POS_FLAGS, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE,
         SW_RESTORE, SW_SHOWNA, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED,
         SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOOWNERZORDER,
@@ -284,6 +286,56 @@ impl NativeWindow {
 
   /// Implements [`NativeWindow::focus`].
   pub(crate) fn focus(&self) -> crate::Result<()> {
+    struct ThreadInputGuard {
+      attached: Vec<(u32, u32)>,
+    }
+
+    impl Drop for ThreadInputGuard {
+      fn drop(&mut self) {
+        for &(src, dest) in &self.attached {
+          unsafe {
+            let _ = AttachThreadInput(src, dest, false);
+          }
+        }
+      }
+    }
+
+    let current_thread_id = unsafe { GetCurrentThreadId() };
+    let target_thread_id = unsafe { GetWindowThreadProcessId(self.hwnd(), None) };
+    let foreground_hwnd = unsafe { GetForegroundWindow() };
+    let foreground_thread_id = if foreground_hwnd.0 != 0 {
+      unsafe { GetWindowThreadProcessId(foreground_hwnd, None) }
+    } else {
+      0
+    };
+
+    let mut attached = Vec::new();
+    if target_thread_id != 0
+      && target_thread_id != current_thread_id
+      && unsafe {
+        AttachThreadInput(current_thread_id, target_thread_id, true)
+      }
+      .as_bool()
+    {
+      attached.push((current_thread_id, target_thread_id));
+    }
+    if foreground_thread_id != 0
+      && foreground_thread_id != current_thread_id
+      && unsafe {
+        AttachThreadInput(foreground_thread_id, current_thread_id, true)
+      }
+      .as_bool()
+    {
+      attached.push((foreground_thread_id, current_thread_id));
+    }
+
+    let _guard = ThreadInputGuard { attached };
+
+    unsafe {
+      _ = LockSetForegroundWindow(LSFW_UNLOCK);
+      _ = AllowSetForegroundWindow(ASFW_ANY);
+    }
+
     let input = [INPUT {
       r#type: INPUT_MOUSE,
       Anonymous: INPUT_0 {
@@ -303,11 +355,6 @@ impl NativeWindow {
 
     // Set as the foreground window.
     unsafe { SetForegroundWindow(self.hwnd()) }.ok()?;
-
-    // Lock foreground window against unsolicited background focus stealing.
-    unsafe {
-      _ = LockSetForegroundWindow(LSFW_LOCK);
-    }
 
     Ok(())
   }

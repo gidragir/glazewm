@@ -223,6 +223,15 @@ impl Rect {
       && self.bottom >= other.bottom
   }
 
+  /// Gets whether this rect intersects with another rect.
+  #[must_use]
+  pub fn intersects(&self, other: &Rect) -> bool {
+    self.left < other.right
+      && self.right > other.left
+      && self.top < other.bottom
+      && self.bottom > other.top
+  }
+
   /// Creates a new rect that is inset by the given amount of pixels on all
   /// sides.
   ///

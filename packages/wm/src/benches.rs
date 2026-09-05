@@ -1,4 +1,8 @@
-#![allow(clippy::cast_precision_loss)]
+#![allow(
+  clippy::cast_precision_loss,
+  clippy::cast_possible_truncation,
+  clippy::cast_possible_wrap
+)]
 
 use std::time::Instant;
 
@@ -23,7 +27,7 @@ fn benchmark_scratch_buffer_vs_fresh_allocations() {
     let mut fresh_vec: Vec<(NativeWindow, Rect)> = Vec::new();
     for w in 0..WINDOWS_PER_ITER {
       fresh_vec.push((
-        NativeWindow::mock().into(),
+        NativeWindow::mock(),
         Rect::from_xy((i + w) as i32, (i + w) as i32, 800, 600),
       ));
     }
@@ -38,7 +42,7 @@ fn benchmark_scratch_buffer_vs_fresh_allocations() {
     pending_sync.batch_positions_scratch.clear();
     for w in 0..WINDOWS_PER_ITER {
       pending_sync.batch_positions_scratch.push((
-        NativeWindow::mock().into(),
+        NativeWindow::mock(),
         Rect::from_xy((i + w) as i32, (i + w) as i32, 800, 600),
       ));
     }

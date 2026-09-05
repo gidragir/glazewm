@@ -158,7 +158,7 @@ mod tests {
 
     for i in 0..10 {
       pending.batch_positions_scratch.push((
-        NativeWindow::mock().into(),
+        NativeWindow::mock(),
         Rect::from_xy(i, i, 100, 100),
       ));
     }

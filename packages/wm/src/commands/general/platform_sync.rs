@@ -154,13 +154,19 @@ fn windows_to_bring_to_front(
           .descendants()
           .filter_map(|descendant| descendant.as_window_container().ok())
           .filter(|window| {
-            let is_floating_or_tiling = matches!(
+            let is_manageable = matches!(
               window.state(),
-              WindowState::Floating(_) | WindowState::Tiling
+              WindowState::Floating(_)
+                | WindowState::Tiling
+                | WindowState::Fullscreen(_)
             );
 
-            is_floating_or_tiling
-              && window.state().is_same_state(&focused_descendant.state())
+            is_manageable
+              && (window.state().is_same_state(&focused_descendant.state())
+                || matches!(
+                  focused_descendant.state(),
+                  WindowState::Fullscreen(_) | WindowState::Tiling
+                ))
           })
           .collect(),
         None => vec![],
@@ -277,7 +283,7 @@ fn redraw_containers(
 
         if let Some(focused_descendant) = focused_descendant {
           if window.id() == focused_descendant.id() {
-            WindowZOrder::Normal
+            WindowZOrder::Top
           } else {
             WindowZOrder::AfterWindow(focused_descendant.native().id())
           }
@@ -293,7 +299,7 @@ fn redraw_containers(
     // NOTE: macOS doesn't have a robust public API for setting the z-order
     // of a window. See `NativeWindow::raise` for more details.
     #[cfg(target_os = "windows")]
-    if should_bring_to_front && !windows_to_redraw.contains(window) {
+    if should_bring_to_front {
       tracing::info!("Updating window z-order: {window}");
 
       if let Err(err) = window.native().set_z_order(&z_order) {
@@ -306,7 +312,7 @@ fn redraw_containers(
         let z_order = z_order.clone();
         let dispatcher = state.dispatcher.clone();
         tokio::task::spawn(async move {
-          tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+          tokio::time::sleep(std::time::Duration::from_millis(15)).await;
           _ = dispatcher.dispatch_async(move || {
             _ = native.set_z_order(&z_order);
           });
@@ -525,6 +531,87 @@ fn reposition_window(
   Ok(())
 }
 
+fn calculate_tiling_physical_rect(
+  rect: &Rect,
+  monitor_rect: &Rect,
+  other_monitor_rects: &[Rect],
+) -> Rect {
+  const SAFE_PARK_X: i32 = 50_000;
+  const SAFE_PARK_Y: i32 = 50_000;
+  const SHADOW_MARGIN: i32 = 10;
+
+  if rect.right <= monitor_rect.left || rect.left >= monitor_rect.right {
+    // Completely offscreen relative to parent monitor.
+    // Park at safe virtual desktop coordinates far outside all monitors,
+    // keeping original dimensions so taskbar and Alt+Tab remain functional.
+    return Rect::from_xy(
+      SAFE_PARK_X,
+      SAFE_PARK_Y,
+      rect.width(),
+      rect.height(),
+    );
+  }
+
+  let phys_left = rect.left;
+  let phys_right = rect.right;
+
+  let check_left = rect.left < monitor_rect.left
+    && (monitor_rect.left - rect.left) > SHADOW_MARGIN;
+  let check_right = rect.right > monitor_rect.right
+    && (rect.right - monitor_rect.right) > SHADOW_MARGIN;
+
+  if check_left || check_right {
+    let mut bleeds_left = false;
+    let mut bleeds_right = false;
+
+    for other in other_monitor_rects {
+      if check_left
+        && !bleeds_left
+        && other.left < monitor_rect.left - SHADOW_MARGIN
+        && other.right > rect.left
+        && other.top < rect.bottom
+        && other.bottom > rect.top
+      {
+        bleeds_left = true;
+      }
+
+      if check_right
+        && !bleeds_right
+        && other.left < rect.right
+        && other.right > monitor_rect.right + SHADOW_MARGIN
+        && other.top < rect.bottom
+        && other.bottom > rect.top
+      {
+        bleeds_right = true;
+      }
+
+      if (!check_left || bleeds_left) && (!check_right || bleeds_right) {
+        break;
+      }
+    }
+
+    if bleeds_left || bleeds_right {
+      return Rect::from_xy(
+        SAFE_PARK_X,
+        SAFE_PARK_Y,
+        rect.width(),
+        rect.height(),
+      );
+    }
+  }
+
+  if phys_right <= phys_left {
+    return Rect::from_xy(
+      SAFE_PARK_X,
+      SAFE_PARK_Y,
+      rect.width(),
+      rect.height(),
+    );
+  }
+
+  Rect::from_ltrb(phys_left, rect.top, phys_right, rect.bottom)
+}
+
 fn calculate_physical_rect(
   window: &WindowContainer,
   rect: &Rect,
@@ -534,49 +621,27 @@ fn calculate_physical_rect(
   let monitor_rect = monitor.native_properties().working_area;
 
   if is_visible && matches!(window, WindowContainer::TilingWindow(_)) {
-    if rect.right <= monitor_rect.left || rect.left >= monitor_rect.right {
-      // Completely offscreen relative to parent monitor.
-      // Park at safe virtual desktop coordinates far outside all monitors,
-      // keeping original dimensions so taskbar and Alt+Tab remain functional.
-      const SAFE_PARK_X: i32 = 50_000;
-      const SAFE_PARK_Y: i32 = 50_000;
-      Ok(Rect::from_xy(
-        SAFE_PARK_X,
-        SAFE_PARK_Y,
-        rect.width(),
-        rect.height(),
-      ))
-    } else if rect.left < monitor_rect.left && rect.right <= monitor_rect.right {
-      // Partially visible on the left edge of monitor. Clamp to monitor left bound.
-      let visible_width = (rect.right - monitor_rect.left).max(1);
-      Ok(Rect::from_xy(
-        monitor_rect.left,
-        rect.y(),
-        visible_width,
-        rect.height(),
-      ))
-    } else if rect.left >= monitor_rect.left && rect.right > monitor_rect.right {
-      // Partially visible on the right edge of monitor. Clamp to monitor right bound.
-      let visible_width = (monitor_rect.right - rect.left).max(1);
-      Ok(Rect::from_xy(
-        rect.left,
-        rect.y(),
-        visible_width,
-        rect.height(),
-      ))
-    } else if rect.left < monitor_rect.left && rect.right > monitor_rect.right {
-      // Wider than monitor working area.
-      Ok(Rect::from_xy(
-        monitor_rect.left,
-        rect.y(),
-        monitor_rect.width(),
-        rect.height(),
-      ))
-    } else {
-      Ok(rect.clone())
-    }
+    let other_monitor_rects: Vec<Rect> = monitor
+      .parent()
+      .map(|root| {
+        root
+          .borrow_children()
+          .iter()
+          .filter_map(|c| {
+            let m = c.as_monitor()?;
+            (m.id() != monitor.id()).then(|| m.native_properties().working_area)
+          })
+          .collect()
+      })
+      .unwrap_or_default();
+
+    Ok(calculate_tiling_physical_rect(
+      rect,
+      &monitor_rect,
+      &other_monitor_rects,
+    ))
   } else {
-    Ok(rect.clone())
+    Ok(Rect::from_ltrb(rect.left, rect.top, rect.right, rect.bottom))
   }
 }
 
@@ -761,22 +826,6 @@ struct WindowPanTarget {
   monitor_rect: Rect,
 }
 
-fn calculate_tiling_physical_rect(rect: &Rect, monitor_rect: &Rect) -> Rect {
-  const SAFE_PARK_X: i32 = 50_000;
-  const SAFE_PARK_Y: i32 = 50_000;
-  if rect.right <= monitor_rect.left || rect.left >= monitor_rect.right {
-    Rect::from_xy(SAFE_PARK_X, SAFE_PARK_Y, rect.width(), rect.height())
-  } else if rect.left < monitor_rect.left && rect.right <= monitor_rect.right {
-    let visible_width = (rect.right - monitor_rect.left).max(1);
-    Rect::from_xy(monitor_rect.left, rect.y(), visible_width, rect.height())
-  } else if rect.left >= monitor_rect.left && rect.right > monitor_rect.right {
-    let visible_width = (monitor_rect.right - rect.left).max(1);
-    Rect::from_xy(rect.left, rect.y(), visible_width, rect.height())
-  } else {
-    rect.clone()
-  }
-}
-
 /// Smoothly animates the workspace `offset_x` to `target_offset` using
 /// non-blocking discrete step interpolation dispatched to the UI thread.
 pub fn animate_pan_workspace(
@@ -809,6 +858,22 @@ pub fn animate_pan_workspace(
       .map_or_else(|| Rect::from_xy(0, 0, 1920, 1080), |m| {
         m.native_properties().working_area
       });
+
+    let other_monitor_rects: Vec<Rect> = workspace
+      .monitor()
+      .and_then(|m| m.parent())
+      .map(|root| {
+        root
+          .borrow_children()
+          .iter()
+          .filter_map(|c| {
+            let m = c.as_monitor()?;
+            (Some(m.id()) != workspace.monitor().map(|cur| cur.id()))
+              .then(|| m.native_properties().working_area)
+          })
+          .collect()
+      })
+      .unwrap_or_default();
 
     let tiling_windows: Vec<WindowPanTarget> = workspace
       .descendants()
@@ -854,8 +919,11 @@ pub fn animate_pan_workspace(
             target.unconstrained_rect.width(),
             target.unconstrained_rect.height(),
           );
-          let physical_rect =
-            calculate_tiling_physical_rect(&shifted_rect, &target.monitor_rect);
+          let physical_rect = calculate_tiling_physical_rect(
+            &shifted_rect,
+            &target.monitor_rect,
+            &other_monitor_rects,
+          );
           step_positions.push((target.native.clone(), physical_rect));
         }
 
@@ -936,14 +1004,11 @@ fn auto_pan_workspace_viewport(
 
   if let Some(focused) = focused_container
     && let Ok(focused_rect) = focused.to_rect()
+    && (focused_rect.left < workspace_rect.left
+      || focused_rect.right > workspace_rect.right)
   {
-    if focused_rect.left < workspace_rect.left {
-      let delta = focused_rect.left - workspace_rect.left;
-      new_offset = f64::from((current_offset + delta).max(0));
-    } else if focused_rect.right > workspace_rect.right {
-      let delta = focused_rect.right - workspace_rect.right;
-      new_offset = f64::from((current_offset + delta).max(0));
-    }
+    let delta = focused_rect.left - workspace_rect.left;
+    new_offset = f64::from((current_offset + delta).max(0));
   }
 
   // Clamp new_offset within [0.0, max_offset]
@@ -962,7 +1027,7 @@ fn auto_pan_workspace_viewport(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::models::TilingWindow;
+  use crate::models::{Monitor, SplitContainer, TilingWindow};
 
   #[test]
   fn test_apply_window_effects_does_not_panic_with_mock_dispatcher() {
@@ -1006,5 +1071,77 @@ mod tests {
     // Rapid focus switch / redirection towards 800.0 must cancel the previous task
     animate_pan_workspace(&ws, 800.0, &mut state, &config);
     assert!(state.active_pan_animations.contains_key(&ws.id()));
+  }
+
+  #[test]
+  fn test_calculate_physical_rect_preserves_width_for_displaced_column() {
+    let win = TilingWindow::mock().call();
+    let ws = Workspace::mock().call();
+    let primary_monitor = Monitor::mock().workspaces(vec![ws.clone()]).call();
+    let other_focused = TilingWindow::mock().call();
+
+    let split = SplitContainer::mock()
+      .tiling_containers(vec![other_focused.into(), win.clone().into()])
+      .call();
+    crate::commands::container::attach_container(&split.into(), &ws.clone().into(), None).unwrap();
+
+    let win_container: WindowContainer = win.into();
+
+    // Case 1: Partially displaced window on the left (-400..600) into empty virtual space.
+    // Width is 100% preserved (1000px) and positioned naturally at -400.
+    let partially_displaced_rect = Rect::from_xy(-400, 0, 1000, 800);
+    let physical_rect =
+      calculate_physical_rect(&win_container, &partially_displaced_rect, true)
+        .unwrap();
+    assert_eq!(physical_rect.width(), 1000);
+    assert_eq!(physical_rect.height(), 800);
+    assert_eq!(physical_rect.x(), -400);
+
+    // Case 2: Completely offscreen window (-1100..-100).
+    // Parked safely offscreen at (50_000, 50_000) with 100% width preserved.
+    let completely_offscreen_rect = Rect::from_xy(-1100, 0, 1000, 800);
+    let parked_rect = calculate_physical_rect(
+      &win_container,
+      &completely_offscreen_rect,
+      true,
+    )
+    .unwrap();
+    assert_eq!(parked_rect.width(), 1000);
+    assert_eq!(parked_rect.height(), 800);
+    assert_eq!(parked_rect.x(), 50_000);
+    assert_eq!(parked_rect.y(), 50_000);
+
+    // Case 3: Window spilling onto an adjacent monitor on a multi-monitor setup.
+    // Parent monitor is at 0..1680. Adjacent left monitor is at -1920..0.
+    // A window at -400..600 intersects the adjacent monitor (-400..0).
+    // The physical rendering rect is clamped to the monitor boundary (0..600),
+    // guaranteeing 0-pixel bleeding onto the left monitor.
+    let root = crate::models::RootContainer::new();
+    let left_monitor = Monitor::mock().call();
+    let mut left_props = left_monitor.native_properties();
+    left_props.working_area = Rect::from_xy(-1920, 0, 1920, 1080);
+    left_monitor.set_native_properties(left_props);
+
+    let mut primary_props = primary_monitor.native_properties();
+    primary_props.working_area = Rect::from_xy(0, 0, 1680, 1050);
+    primary_monitor.set_native_properties(primary_props);
+
+    let root_container: Container = root.clone().into();
+    let left_monitor_container: Container = left_monitor.clone().into();
+    let primary_monitor_container: Container = primary_monitor.clone().into();
+
+    crate::commands::container::attach_container(&left_monitor_container, &root_container, None).unwrap();
+    crate::commands::container::attach_container(&primary_monitor_container, &root_container, None).unwrap();
+
+    let multi_mon_clamped = calculate_physical_rect(
+      &win_container,
+      &partially_displaced_rect,
+      true,
+    )
+    .unwrap();
+    assert_eq!(multi_mon_clamped.width(), 1000);
+    assert_eq!(multi_mon_clamped.height(), 800);
+    assert_eq!(multi_mon_clamped.x(), 50_000);
+    assert_eq!(multi_mon_clamped.y(), 50_000);
   }
 }

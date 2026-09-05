@@ -1,4 +1,4 @@
-use wm_common::{GapsConfig, TilingDirection};
+use wm_common::{FullscreenStateConfig, GapsConfig, TilingDirection, WindowState};
 
 use crate::{
   models::{
@@ -6,6 +6,7 @@ use crate::{
     TilingWindow, Workspace,
   },
   traits::{CommonGetters, TilingDirectionGetters, TilingSizeGetters},
+  wm_state::WmState,
 };
 
 #[test]
@@ -270,3 +271,141 @@ fn container_focus_and_descendant_focus_order() {
   assert_eq!(leaf_focus[0].id(), win_a.id());
   assert_eq!(leaf_focus[1].id(), win_b.id());
 }
+
+#[test]
+fn fullscreen_window_resolves_column_ancestor() {
+  let win = TilingWindow::mock().call();
+  let split = SplitContainer::mock()
+    .tiling_direction(TilingDirection::Vertical)
+    .tiling_containers(vec![win.clone().into()])
+    .call();
+  let workspace = Workspace::mock()
+    .tiling_direction(TilingDirection::Horizontal)
+    .tiling_containers(vec![split.clone().into()])
+    .call();
+  let _monitor = Monitor::mock().workspaces(vec![workspace.clone()]).call();
+
+  let fs_win = NonTilingWindow::mock()
+    .state(WindowState::Fullscreen(FullscreenStateConfig::default()))
+    .call();
+
+  fs_win.set_insertion_target(Some(crate::models::InsertionTarget {
+    target_parent: split.clone().into(),
+    target_index: 0,
+    prev_tiling_size: 1.0,
+    prev_sibling_count: 1,
+  }));
+
+  crate::commands::container::attach_container(
+    &fs_win.clone().into(),
+    &workspace.into(),
+    None,
+  )
+  .unwrap();
+
+  let ancestor =
+    crate::commands::window::find_column_ancestor(&fs_win.into());
+  assert!(ancestor.is_some());
+  assert_eq!(ancestor.unwrap().id(), split.id());
+}
+
+#[test]
+fn bidirectional_focus_between_fullscreen_and_tiling_columns() {
+  let win_left = TilingWindow::mock().call();
+  let col_left = SplitContainer::mock()
+    .tiling_direction(TilingDirection::Vertical)
+    .tiling_containers(vec![win_left.clone().into()])
+    .call();
+
+  let win_right = TilingWindow::mock().call();
+  let col_right = SplitContainer::mock()
+    .tiling_direction(TilingDirection::Vertical)
+    .tiling_containers(vec![win_right.clone().into()])
+    .call();
+
+  let workspace = Workspace::mock()
+    .tiling_direction(TilingDirection::Horizontal)
+    .tiling_containers(vec![col_left.clone().into(), col_right.clone().into()])
+    .call();
+  let _monitor = Monitor::mock().workspaces(vec![workspace.clone()]).call();
+
+  let fs_win = NonTilingWindow::mock()
+    .state(WindowState::Fullscreen(FullscreenStateConfig::default()))
+    .call();
+
+  fs_win.set_insertion_target(Some(crate::models::InsertionTarget {
+    target_parent: col_left.clone().into(),
+    target_index: 0,
+    prev_tiling_size: 1.0,
+    prev_sibling_count: 1,
+  }));
+
+  crate::commands::container::attach_container(
+    &fs_win.clone().into(),
+    &workspace.clone().into(),
+    None,
+  )
+  .unwrap();
+
+  let mut state = WmState::mock();
+
+  // Focus from fullscreen window towards the right tiling column
+  crate::commands::container::focus_in_direction(
+    &fs_win.clone().into(),
+    &wm_platform::Direction::Right,
+    &mut state,
+  )
+  .unwrap();
+  let focused = workspace.descendant_focus_order().next().unwrap();
+  assert_eq!(focused.id(), win_right.id());
+
+  // Focus from tiling window back towards the left fullscreen window
+  crate::commands::container::focus_in_direction(
+    &win_right.into(),
+    &wm_platform::Direction::Left,
+    &mut state,
+  )
+  .unwrap();
+  let focused_back = workspace.descendant_focus_order().next().unwrap();
+  assert_eq!(focused_back.id(), fs_win.id());
+}
+
+#[test]
+fn test_two_columns_layout_and_dimensions() {
+  use crate::traits::PositionGetters;
+  let workspace = Workspace::mock()
+    .tiling_direction(TilingDirection::Horizontal)
+    .call();
+  let _monitor = Monitor::mock().workspaces(vec![workspace.clone()]).call();
+
+  let col1 = SplitContainer::new(TilingDirection::Vertical, GapsConfig::default());
+  crate::commands::container::attach_container(&col1.clone().into(), &workspace.clone().into(), None).unwrap();
+  let win1 = TilingWindow::mock().call();
+  crate::commands::container::attach_container(&win1.clone().into(), &col1.clone().into(), None).unwrap();
+
+  let col2 = SplitContainer::new(TilingDirection::Vertical, GapsConfig::default());
+  crate::commands::container::attach_container(&col2.clone().into(), &workspace.clone().into(), None).unwrap();
+  let win2 = TilingWindow::mock().call();
+  crate::commands::container::attach_container(&win2.clone().into(), &col2.clone().into(), None).unwrap();
+
+  assert!((col1.tiling_size() - 1.0).abs() < f32::EPSILON);
+  assert!((col2.tiling_size() - 1.0).abs() < f32::EPSILON);
+  assert!((win1.tiling_size() - 1.0).abs() < f32::EPSILON);
+  assert!((win2.tiling_size() - 1.0).abs() < f32::EPSILON);
+
+  let ws_rect = workspace.to_rect().unwrap();
+  let col1_rect = col1.to_rect().unwrap();
+  let col2_rect = col2.to_rect().unwrap();
+  let win1_rect = win1.to_rect().unwrap();
+  let win2_rect = win2.to_rect().unwrap();
+
+  assert_eq!(col1_rect.width(), ws_rect.width());
+  assert_eq!(col2_rect.width(), ws_rect.width());
+  assert_eq!(win1_rect.width(), ws_rect.width());
+  assert_eq!(win2_rect.width(), ws_rect.width());
+  let (horizontal_gap, _) = col1.inner_gaps().unwrap();
+  assert_eq!(col2_rect.x(), col1_rect.x() + col1_rect.width() + horizontal_gap);
+}
+
+
+

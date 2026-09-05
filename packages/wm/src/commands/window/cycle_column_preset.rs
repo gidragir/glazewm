@@ -17,10 +17,24 @@ const EPSILON: f32 = 0.01;
 pub fn find_column_ancestor(
   container: &Container,
 ) -> Option<TilingContainer> {
+  if let Some(non_tiling) = container.as_non_tiling_window()
+    && let Some(target) = non_tiling.insertion_target()
+  {
+    return find_column_ancestor(&target.target_parent);
+  }
+
   let mut current = container.clone();
   while let Some(parent) = current.parent() {
     if parent.as_workspace().is_some() {
-      return current.as_tiling_container().ok();
+      if let Ok(tiling) = current.as_tiling_container() {
+        return Some(tiling);
+      }
+      if let Some(non_tiling) = current.as_non_tiling_window()
+        && let Some(target) = non_tiling.insertion_target()
+      {
+        return find_column_ancestor(&target.target_parent);
+      }
+      return None;
     }
     current = parent;
   }
@@ -34,8 +48,12 @@ pub fn cycle_column_preset(
   state: &mut WmState,
   config: &ParsedConfig,
 ) -> anyhow::Result<()> {
-  let column_container = find_column_ancestor(subject_container)
-    .context("Focused container is not inside a workspace column.")?;
+  let Some(column_container) = find_column_ancestor(subject_container) else {
+    tracing::debug!(
+      "Focused container is not inside a workspace column; skipping preset cycle."
+    );
+    return Ok(());
+  };
 
   let parent = column_container
     .parent()
@@ -97,8 +115,12 @@ pub fn set_column_width(
   width: &LengthValue,
   state: &mut WmState,
 ) -> anyhow::Result<()> {
-  let column_container = find_column_ancestor(subject_container)
-    .context("Focused container is not inside a workspace column.")?;
+  let Some(column_container) = find_column_ancestor(subject_container) else {
+    tracing::debug!(
+      "Focused container is not inside a workspace column; skipping column width change."
+    );
+    return Ok(());
+  };
 
   let parent = column_container
     .parent()

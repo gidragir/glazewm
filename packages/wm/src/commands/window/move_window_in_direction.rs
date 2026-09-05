@@ -41,11 +41,13 @@ fn move_tiling_window(
   direction: &Direction,
   state: &mut WmState,
 ) -> anyhow::Result<()> {
-  // Flatten the parent split container if it only contains the window.
+  // Flatten the parent split container if it only contains the window,
+  // but preserve top-level columns on infinite horizontal canvas.
   if let Some(split_parent) = window_to_move
     .parent()
     .and_then(|parent| parent.as_split().cloned())
     && split_parent.child_count() == 1
+    && split_parent.parent().is_some_and(|p| p.as_workspace().is_none())
   {
     flatten_split_container(split_parent)?;
   }

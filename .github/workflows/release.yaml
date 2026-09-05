@@ -15,9 +15,6 @@ on:
         description: Enable UIAccess in manifest (requires Azure code-signing secrets).
         default: false
 
-permissions:
-  contents: write
-
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
@@ -30,12 +27,14 @@ jobs:
       tag_name: ${{ steps.version.outputs.tag_name }}
     steps:
       - id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version_number }}
         run: |
-          if [ -n "${{ inputs.version_number }}" ]; then
-            RAW_VER="${{ inputs.version_number }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            RAW_VER="$INPUT_VERSION"
             CLEAN_VER="${RAW_VER#v}"
             TAG_NAME="v$CLEAN_VER"
-          elif [[ "${{ github.ref }}" =~ ^refs/tags/v.* ]]; then
+          elif [[ "${GITHUB_REF}" =~ ^refs/tags/v.* ]]; then
             CLEAN_VER="${GITHUB_REF_NAME#v}"
             TAG_NAME="$GITHUB_REF_NAME"
           else
@@ -57,11 +56,13 @@ jobs:
   release:
     needs: [prepare, package]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e0059719ce7373ae42 # v4.1.8
         with:
           pattern: package-*
           merge-multiple: true

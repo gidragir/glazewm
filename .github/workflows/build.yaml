@@ -43,14 +43,14 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248
         with:
           targets: ${{ matrix.target }}
           toolchain: nightly
 
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@988c164c3d0e93c4dbab36aaf5bbeb77425b2894 # v2.7.3
         with:
           shared-key: ${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
 
@@ -76,7 +76,7 @@ jobs:
             "$SOURCE_DIR"/glazewm{,-cli,-watcher}.exe \
             "$UPLOAD_DIR/" 2>/dev/null || true
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           if-no-files-found: error
           name: build-${{ matrix.target }}

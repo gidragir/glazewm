@@ -296,6 +296,82 @@ def cmd_parse_mcp(args: argparse.Namespace) -> None:
         print(f"Unknown MCP JSON structure. Keys: {list(data.keys())}")
 
 
+def cmd_duplications(args: argparse.Namespace) -> None:
+    """List and inspect duplicate lines and blocks reported by Sonar."""
+    host, token, project_key, _ = resolve_auth_and_endpoint(args)
+    url = (
+        f"{host}/api/measures/component_tree"
+        f"?component={urllib.parse.quote(project_key)}"
+        f"&metricKeys=duplicated_lines,duplicated_blocks,duplicated_lines_density,ncloc"
+        f"&qualifiers=FIL"
+        f"&ps=500"
+    )
+    data = api_request(url, token)
+    components = data.get("components", [])
+
+    files_with_dup = []
+    for c in components:
+        measures = {m["metric"]: m.get("value", "0") for m in c.get("measures", [])}
+        dup_lines = int(float(measures.get("duplicated_lines", 0)))
+        dup_blocks = int(float(measures.get("duplicated_blocks", 0)))
+        density = float(measures.get("duplicated_lines_density", 0.0))
+        ncloc = int(float(measures.get("ncloc", 0)))
+        if dup_lines > 0 or dup_blocks > 0:
+            files_with_dup.append({
+                "key": c.get("key"),
+                "path": c.get("path") or c.get("name"),
+                "duplicated_lines": dup_lines,
+                "duplicated_blocks": dup_blocks,
+                "density": density,
+                "ncloc": ncloc,
+            })
+
+    files_with_dup.sort(key=lambda x: x["duplicated_lines"], reverse=True)
+
+    print(f"Duplication Report for {project_key}")
+    print(f"Total files with duplications: {len(files_with_dup)}\n")
+
+    if not files_with_dup:
+        print("No duplicated files found.")
+        return
+
+    print(f"{'Path':<55} | {'Lines':>6} | {'Blocks':>6} | {'Density':>8} | {'NCLOC':>6}")
+    print("-" * 88)
+    for f in files_with_dup:
+        print(f"{f['path']:<55} | {f['duplicated_lines']:>6} | {f['duplicated_blocks']:>6} | {f['density']:>7.1f}% | {f['ncloc']:>6}")
+
+    if args.details:
+        print("\n" + "=" * 88)
+        print("Detailed Duplication Blocks:")
+        print("=" * 88)
+        for f in files_with_dup:
+            if args.file and args.file not in f["path"]:
+                continue
+            dup_url = f"{host}/api/duplications/show?key={urllib.parse.quote(f['key'])}"
+            try:
+                dup_data = api_request(dup_url, token)
+            except Exception as e:
+                print(f"\nCould not fetch duplication details for {f['path']}: {e}")
+                continue
+
+            duplications = dup_data.get("duplications", [])
+            files_map = dup_data.get("files", {})
+
+            if duplications:
+                print(f"\nFile: {f['path']} ({f['duplicated_lines']} duplicated lines in {f['duplicated_blocks']} blocks)")
+                for idx, d in enumerate(duplications, 1):
+                    blocks = d.get("blocks", [])
+                    print(f"  Block #{idx}:")
+                    for b in blocks:
+                        file_ref = files_map.get(b.get("_ref"), {})
+                        b_file = file_ref.get("name") or file_ref.get("key", "same file")
+                        from_line = b.get("from")
+                        size = b.get("size")
+                        to_line = from_line + size - 1 if from_line and size else "?"
+                        print(f"    - {b_file}:{from_line}-{to_line} ({size} lines)")
+
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="SonarQube / SonarCloud helper for GlazeWM.",
@@ -335,6 +411,12 @@ def main() -> None:
     p_mcp.add_argument("file", nargs="?", default="-", help="Path to JSON file, or '-' for stdin")
     p_mcp.add_argument("--limit", type=int, help="Limit number of results to display")
     p_mcp.set_defaults(func=cmd_parse_mcp)
+
+    # duplications
+    p_dup = subparsers.add_parser("duplications", help="List and inspect code duplications")
+    p_dup.add_argument("--details", action="store_true", help="Show detailed matching blocks and lines")
+    p_dup.add_argument("--file", help="Filter details by filename substring")
+    p_dup.set_defaults(func=cmd_duplications)
 
     args = parser.parse_args()
     args.func(args)
